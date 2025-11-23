@@ -1,0 +1,255 @@
+/* Light theme (root) */
+:root {
+    --primary: #2563eb;
+    --primary-hover: #1d4ed8;
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --text: #1e293b;
+    --muted: #64748b;
+    --border: #e2e8f0;
+    --output-bg: #0f172a;
+    --output-text: #10b981;
+    --surface-hover: #f1f5f9;
+    /* stronger tab backgrounds for clarity (light mode) */
+    --tab-bg: rgba(2,6,23,0.06); /* subtle gray-blue */
+    --tab-hover-bg: rgba(37,99,235,0.06);
+    --tab-active-bg: rgba(37,99,235,0.12);
+}
+
+/* Dark theme overrides - applied when <body> has .dark */
+body.dark {
+    --primary: #60a5fa; /* lighter blue for dark */
+    --primary-hover: #93c5fd;
+    --bg: #0b1220;
+    --surface: #0f1724;
+    --text: #e6eef6;
+    --muted: #9aa8b4;
+    --border: rgba(255,255,255,0.06);
+    --output-bg: #0b1220;
+    --output-text: #7ee787;
+    --surface-hover: rgba(255,255,255,0.02);
+    /* dark mode tab variables */
+    --tab-bg: rgba(255,255,255,0.04);
+    --tab-hover-bg: rgba(96,165,250,0.10);
+    --tab-active-bg: rgba(96,165,250,0.16);
+}
+
+/* Smooth transitions for theme changes (colors & surfaces) */
+:root,
+body,
+header,
+.tabs,
+.tab-btn,
+main,
+.card,
+.assignment-container,
+textarea,
+button.run-btn,
+.output-box,
+.theme-toggle {
+    transition: background-color 280ms ease, color 280ms ease, border-color 280ms ease, box-shadow 200ms ease;
+}
+
+/* Respect reduced motion preferences */
+@media (prefers-reduced-motion: reduce) {
+    :root,
+    body,
+    header,
+    .tabs,
+    .tab-btn,
+    main,
+    .card,
+    .assignment-container,
+    textarea,
+    button.run-btn,
+    .output-box,
+    .theme-toggle {
+        transition: none !important;
+    }
+}
+
+body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background-color: var(--bg);
+    color: var(--text);
+    margin: 0;
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+/* Header */
+header {
+    background: var(--surface);
+    border-bottom: 1px solid var(--border);
+    padding: 1rem 2rem;
+    display: flex;
+    align-items: center;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+}
+
+/* header controls sits at the right of the header */
+.header-controls {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+/* Theme toggle button */
+.theme-toggle {
+    background: none;
+    border: 1px solid var(--border);
+    padding: 6px 8px;
+    border-radius: 8px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s, border-color 0.15s, transform 0.08s;
+    color: var(--text);
+}
+
+.theme-toggle:hover { transform: translateY(-1px); border-color: var(--primary); background: var(--surface-hover); }
+
+h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--primary); }
+
+/* Navigation Tabs (now floating rounded buttons) */
+.tabs {
+    display: flex;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+    margin-left: 2rem;
+    overflow-x: auto;
+    align-items: center;
+    /* keep transparent so tabs look like floating pills */
+    background: transparent;
+    border-bottom: none;
+}
+
+.tab-btn {
+    background-color: var(--tab-bg);
+    border: none;
+    padding: 0.5rem 0.9rem;
+    font-size: 0.95rem;
+    color: var(--muted);
+    cursor: pointer;
+    border-radius: 10px;
+    border: 1px solid transparent;
+    transition: transform 160ms ease, background-color 200ms ease, color 160ms ease, box-shadow 200ms ease;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+}
+
+/* Make non-selected tabs clearly interactive and keyboard reachable */
+.tab-btn:not(.active) {
+    opacity: 0.95;
+}
+
+/* keyboard focus state */
+.tab-btn:focus-visible {
+    outline: 3px solid rgba(37,99,235,0.18);
+    outline-offset: 3px;
+    box-shadow: 0 8px 20px rgba(37,99,235,0.08);
+}
+
+.tab-btn:hover {
+    transform: translateY(-4px);
+    color: var(--text);
+    background-color: var(--tab-hover-bg);
+    /* intentionally no box-shadow on hover */
+}
+
+/* Active tab becomes a filled rounded rectangle */
+.tab-btn.active {
+    color: var(--primary);
+    background-color: var(--tab-active-bg);
+    /* box-shadow intentionally removed per user request */
+    font-weight: 600;
+    transform: translateY(-2px);
+}
+
+/* Main Content */
+main {
+    flex: 1;
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.tab-content { display: none; animation: fadeIn 0.3s ease; }
+.tab-content.active { display: block; }
+
+@keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Home Grid */
+.home-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 1.5rem;
+    margin-top: 2rem;
+}
+
+.card,
+.assignment-container {
+    background: var(--surface);
+    border-radius: 8px;
+    border: 1px solid var(--border);
+}
+
+.card {
+    padding: 1.5rem;
+    cursor: pointer;
+    transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-color: var(--primary); }
+.card h3 { margin-top: 0; color: var(--primary); }
+.card p { font-size: 0.9rem; color: var(--muted); }
+
+/* Inputs & Outputs */
+.assignment-container {
+    padding: 2rem;
+}
+
+textarea {
+    width: 100%;
+    height: 120px;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-family: monospace;
+    resize: vertical;
+    box-sizing: border-box;
+    margin-bottom: 1rem;
+}
+
+textarea:focus { outline: 2px solid var(--primary); border-color: transparent; }
+
+button.run-btn {
+    background-color: var(--primary);
+    color: white;
+    border: none;
+    padding: 0.75rem 1.5rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.2s;
+}
+
+button.run-btn:hover { background-color: var(--primary-hover); }
+
+.output-box {
+    margin-top: 1.5rem;
+    background: var(--output-bg);
+    color: var(--output-text);
+    padding: 1.5rem;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    white-space: pre-wrap;
+    min-height: 100px;
+}

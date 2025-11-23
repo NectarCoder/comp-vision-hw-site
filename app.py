@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify
+from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import time
 
@@ -11,6 +11,16 @@ CORS(app)  # Enable CORS for all routes
 def home():
     """Serves the main frontend HTML page."""
     return render_template('index.html')
+
+
+@app.route('/favicon.ico')
+def favicon():
+    """Serve the favicon from the static folder at the root path /favicon.ico.
+
+    Browsers usually request /favicon.ico — Flask serves static files under /static/, so
+    we add this small route so the favicon is available at the expected path.
+    """
+    return send_from_directory(app.static_folder, 'favicon.ico')
 
 # --- Assignment Stubs ---
 # These are the endpoints your Javascript will call.

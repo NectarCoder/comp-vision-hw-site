@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Computer Vision Coursework</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-hover: #1d4ed8;
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --text: #1e293b;
+            --border: #e2e8f0;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background-color: var(--bg);
+            color: var(--text);
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* Header */
+        header {
+            background: var(--surface);
+            border-bottom: 1px solid var(--border);
+            padding: 1rem 2rem;
+            display: flex;
+            align-items: center;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+        }
+
+        h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--primary); }
+
+        /* Navigation Tabs */
+        .tabs {
+            display: flex;
+            background: var(--surface);
+            padding: 0 2rem;
+            border-bottom: 1px solid var(--border);
+            overflow-x: auto;
+        }
+
+        .tab-btn {
+            background: none;
+            border: none;
+            padding: 1rem 1.5rem;
+            font-size: 0.95rem;
+            color: #64748b;
+            cursor: pointer;
+            border-bottom: 2px solid transparent;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+
+        .tab-btn:hover { color: var(--primary); background-color: #f1f5f9; }
+        .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+
+        /* Main Content */
+        main {
+            flex: 1;
+            padding: 2rem;
+            max-width: 900px;
+            margin: 0 auto;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .tab-content { display: none; animation: fadeIn 0.3s ease; }
+        .tab-content.active { display: block; }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(5px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Home Grid */
+        .home-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .card {
+            background: var(--surface);
+            padding: 1.5rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-color: var(--primary); }
+        .card h3 { margin-top: 0; color: var(--primary); }
+        .card p { font-size: 0.9rem; color: #64748b; }
+
+        /* Inputs & Outputs */
+        .assignment-container {
+            background: var(--surface);
+            padding: 2rem;
+            border-radius: 8px;
+            border: 1px solid var(--border);
+        }
+
+        textarea {
+            width: 100%;
+            height: 120px;
+            padding: 1rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-family: monospace;
+            resize: vertical;
+            box-sizing: border-box;
+            margin-bottom: 1rem;
+        }
+
+        textarea:focus { outline: 2px solid var(--primary); border-color: transparent; }
+
+        button.run-btn {
+            background-color: var(--primary);
+            color: white;
+            border: none;
+            padding: 0.75rem 1.5rem;
+            border-radius: 6px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        button.run-btn:hover { background-color: var(--primary-hover); }
+
+        .output-box {
+            margin-top: 1.5rem;
+            background: #1e293b;
+            color: #10b981;
+            padding: 1.5rem;
+            border-radius: 6px;
+            font-family: 'Courier New', monospace;
+            white-space: pre-wrap;
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+
+<header>
+    <h1>Computer Vision Coursework Website</h1>
+</header>
+
+<!-- Navigation -->
+<div class="tabs">
+    <button class="tab-btn active" onclick="switchTab('home')">Home</button>
+    <button class="tab-btn" onclick="switchTab('a1')">Assignment 1</button>
+    <button class="tab-btn" onclick="switchTab('a2')">Assignment 2</button>
+    <button class="tab-btn" onclick="switchTab('a3')">Assignment 3</button>
+    <button class="tab-btn" onclick="switchTab('a4')">Assignment 4</button>
+    <button class="tab-btn" onclick="switchTab('a56')">Assignment 5 & 6</button>
+    <button class="tab-btn" onclick="switchTab('a7')">Assignment 7</button>
+</div>
+
+<main>
+    <!-- HOME TAB -->
+    <div id="home" class="tab-content active">
+        <h2>Welcome to My Portfolio</h2>
+        <p>Select an assignment below to view the implementation and results.</p>
+        
+        <div class="home-grid">
+            <div class="card" onclick="switchTab('a1')">
+                <h3>Assignment 1</h3>
+                <p>Basic Image Processing & Filters</p>
+            </div>
+            <div class="card" onclick="switchTab('a2')">
+                <h3>Assignment 2</h3>
+                <p>Edge Detection Algorithms</p>
+            </div>
+            <div class="card" onclick="switchTab('a3')">
+                <h3>Assignment 3</h3>
+                <p>Feature Matching & Homography</p>
+            </div>
+            <div class="card" onclick="switchTab('a4')">
+                <h3>Assignment 4</h3>
+                <p>Optical Flow</p>
+            </div>
+            <div class="card" onclick="switchTab('a56')">
+                <h3>Assignment 5 & 6</h3>
+                <p>Deep Learning & Classification</p>
+            </div>
+            <div class="card" onclick="switchTab('a7')">
+                <h3>Assignment 7</h3>
+                <p>Final Capstone Project</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- ASSIGNMENT 1 -->
+    <div id="a1" class="tab-content">
+        <h2>Assignment 1</h2>
+        <p class="description">Description: Enter parameters or data below to process.</p>
+        <div class="assignment-container">
+            <textarea id="input-a1" placeholder="Enter input data here..."></textarea>
+            <button class="run-btn" onclick="runAssignment('a1')">Run Assignment 1</button>
+            <div id="output-a1" class="output-box">// Output will appear here...</div>
+        </div>
+    </div>
+
+    <!-- ASSIGNMENT 2 -->
+    <div id="a2" class="tab-content">
+        <h2>Assignment 2</h2>
+        <p class="description">Description for Assignment 2.</p>
+        <div class="assignment-container">
+            <textarea id="input-a2" placeholder="Enter input data here..."></textarea>
+            <button class="run-btn" onclick="runAssignment('a2')">Run Assignment 2</button>
+            <div id="output-a2" class="output-box">// Output will appear here...</div>
+        </div>
+    </div>
+
+    <!-- ASSIGNMENT 3 -->
+    <div id="a3" class="tab-content">
+        <h2>Assignment 3</h2>
+        <p class="description">Description for Assignment 3.</p>
+        <div class="assignment-container">
+            <textarea id="input-a3" placeholder="Enter input data here..."></textarea>
+            <button class="run-btn" onclick="runAssignment('a3')">Run Assignment 3</button>
+            <div id="output-a3" class="output-box">// Output will appear here...</div>
+        </div>
+    </div>
+
+    <!-- ASSIGNMENT 4 -->
+    <div id="a4" class="tab-content">
+        <h2>Assignment 4</h2>
+        <p class="description">Description for Assignment 4.</p>
+        <div class="assignment-container">
+            <textarea id="input-a4" placeholder="Enter input data here..."></textarea>
+            <button class="run-btn" onclick="runAssignment('a4')">Run Assignment 4</button>
+            <div id="output-a4" class="output-box">// Output will appear here...</div>
+        </div>
+    </div>
+
+    <!-- ASSIGNMENT 5 & 6 -->
+    <div id="a56" class="tab-content">
+        <h2>Assignment 5 & 6</h2>
+        <p class="description">Combined advanced assignment.</p>
+        <div class="assignment-container">
+            <textarea id="input-a56" placeholder="Enter input data here..."></textarea>
+            <button class="run-btn" onclick="runAssignment('a56')">Run Assignment 5 & 6</button>
+            <div id="output-a56" class="output-box">// Output will appear here...</div>
+        </div>
+    </div>
+
+    <!-- ASSIGNMENT 7 -->
+    <div id="a7" class="tab-content">
+        <h2>Assignment 7</h2>
+        <p class="description">Final Project.</p>
+        <div class="assignment-container">
+            <textarea id="input-a7" placeholder="Enter input data here..."></textarea>
+            <button class="run-btn" onclick="runAssignment('a7')">Run Assignment 7</button>
+            <div id="output-a7" class="output-box">// Output will appear here...</div>
+        </div>
+    </div>
+
+</main>
+
+<script>
+    // Tab Switching Logic
+    function switchTab(tabId) {
+        // Hide all contents
+        document.querySelectorAll('.tab-content').forEach(content => {
+            content.classList.remove('active');
+        });
+        
+        // Deactivate all buttons
+        document.querySelectorAll('.tab-btn').forEach(btn => {
+            btn.classList.remove('active');
+        });
+
+        // Show specific content
+        document.getElementById(tabId).classList.add('active');
+
+        // Activate specific button (finding by onclick attribute is a quick hack for this structure)
+        const buttons = Array.from(document.querySelectorAll('.tab-btn'));
+        const activeButton = buttons.find(btn => btn.getAttribute('onclick').includes(tabId));
+        if (activeButton) activeButton.classList.add('active');
+    }
+
+    // Generic Runner for Assignments
+    async function runAssignment(id) {
+        const inputElem = document.getElementById(`input-${id}`);
+        const outputElem = document.getElementById(`output-${id}`);
+        const textData = inputElem.value;
+
+        outputElem.innerText = "Processing on Azure VM...";
+        
+        try {
+            const response = await fetch(`/api/${id}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ input: textData })
+            });
+
+            const data = await response.json();
+            
+            if (response.ok) {
+                outputElem.innerText = data.result;
+            } else {
+                outputElem.innerText = "Error: " + (data.error || "Unknown server error");
+            }
+        } catch (error) {
+            outputElem.innerText = "Network Error: Could not connect to Flask backend.\nIs app.py running?";
+            console.error(error);
+        }
+    }
+</script>
+
+</body>
+</html>

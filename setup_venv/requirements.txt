@@ -1,2 +1,6 @@
 Flask>=3.0
 flask-cors>=3.0
+opencv-python
+numpy
+matplotlib
+mediapipe

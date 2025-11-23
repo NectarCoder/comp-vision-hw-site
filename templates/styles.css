@@ -114,6 +114,10 @@ header {
 
 h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--primary); }
 
+/* Make the main title clearly interactive when clickable */
+#site-title { cursor: pointer; display: inline-block; }
+#site-title:focus { outline: 3px solid rgba(37,99,235,0.18); outline-offset: 6px; border-radius: 6px; }
+
 /* Navigation Tabs (now floating rounded buttons) */
 .tabs {
     display: flex;
@@ -253,3 +257,4 @@ button.run-btn:hover { background-color: var(--primary-hover); }
     white-space: pre-wrap;
     min-height: 100px;
 }
+

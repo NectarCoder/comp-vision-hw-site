@@ -17,6 +17,10 @@
             --output-bg: #0f172a;
             --output-text: #10b981;
             --surface-hover: #f1f5f9;
+            /* stronger tab backgrounds for clarity (light mode) */
+            --tab-bg: rgba(2,6,23,0.06); /* subtle gray-blue */
+            --tab-hover-bg: rgba(37,99,235,0.06);
+            --tab-active-bg: rgba(37,99,235,0.12);
         }
 
         /* Dark theme overrides - applied when <body> has .dark */
@@ -31,6 +35,10 @@
             --output-bg: #0b1220;
             --output-text: #7ee787;
             --surface-hover: rgba(255,255,255,0.02);
+            /* dark mode tab variables */
+            --tab-bg: rgba(255,255,255,0.04);
+            --tab-hover-bg: rgba(96,165,250,0.10);
+            --tab-active-bg: rgba(96,165,250,0.16);
         }
 
         /* Smooth transitions for theme changes (colors & surfaces) */
@@ -113,29 +121,64 @@
 
         h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--primary); }
 
-        /* Navigation Tabs */
+        /* Navigation Tabs (now floating rounded buttons) */
         .tabs {
             display: flex;
-            background: var(--surface);
-            padding: 0 2rem;
-            border-bottom: 1px solid var(--border);
+            gap: 0.5rem;
+            padding: 0.5rem 1rem;
+            margin-left: 2rem;
             overflow-x: auto;
+            align-items: center;
+            /* keep transparent so tabs look like floating pills */
+            background: transparent;
+            border-bottom: none;
         }
 
         .tab-btn {
-            background: none;
+            background: transparent;
+            background-color: var(--tab-bg);
             border: none;
-            padding: 1rem 1.5rem;
+            padding: 0.5rem 0.9rem;
             font-size: 0.95rem;
             color: var(--muted);
             cursor: pointer;
-            border-bottom: 2px solid transparent;
-            transition: all 0.2s;
+            border-radius: 10px;
+            border: 1px solid transparent;
+            transition: transform 160ms ease, background-color 200ms ease, color 160ms ease, box-shadow 200ms ease;
             white-space: nowrap;
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
         }
 
-        .tab-btn:hover { color: var(--primary); background-color: var(--surface-hover); }
-        .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
+        /* Make non-selected tabs clearly interactive and keyboard reachable */
+        .tab-btn:not(.active) {
+            opacity: 0.95;
+        }
+
+        /* keyboard focus state */
+        .tab-btn:focus-visible {
+            outline: 3px solid rgba(37,99,235,0.18);
+            outline-offset: 3px;
+            box-shadow: 0 8px 20px rgba(37,99,235,0.08);
+        }
+
+        .tab-btn:hover {
+            transform: translateY(-4px);
+            color: var(--text);
+            background-color: var(--tab-hover-bg);
+            color: var(--text);
+            /* intentionally no box-shadow on hover */
+        }
+
+        /* Active tab becomes a filled rounded rectangle */
+        .tab-btn.active {
+            color: var(--primary);
+            background-color: var(--tab-active-bg);
+            /* box-shadow intentionally removed per user request */
+            font-weight: 600;
+            transform: translateY(-2px);
+        }
 
         /* Main Content */
         main {
@@ -233,14 +276,14 @@
 </header>
 
 <!-- Navigation -->
-<div class="tabs">
-    <button class="tab-btn active" onclick="switchTab('home')">Home</button>
-    <button class="tab-btn" onclick="switchTab('a1')">Assignment 1</button>
-    <button class="tab-btn" onclick="switchTab('a2')">Assignment 2</button>
-    <button class="tab-btn" onclick="switchTab('a3')">Assignment 3</button>
-    <button class="tab-btn" onclick="switchTab('a4')">Assignment 4</button>
-    <button class="tab-btn" onclick="switchTab('a56')">Assignment 5 & 6</button>
-    <button class="tab-btn" onclick="switchTab('a7')">Assignment 7</button>
+<div class="tabs" role="tablist" aria-label="Assignments navigation">
+    <button class="tab-btn active" role="tab" aria-selected="true" tabindex="0" onclick="switchTab('home')">Home</button>
+    <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a1')">Assignment 1</button>
+    <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a2')">Assignment 2</button>
+    <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a3')">Assignment 3</button>
+    <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a4')">Assignment 4</button>
+    <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a56')">Assignment 5 & 6</button>
+    <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a7')">Assignment 7</button>
 </div>
 
 <main>
@@ -361,11 +404,60 @@
         // Show specific content
         document.getElementById(tabId).classList.add('active');
 
-        // Activate specific button (finding by onclick attribute is a quick hack for this structure)
+        // Activate and update accessibility attributes for tab buttons
         const buttons = Array.from(document.querySelectorAll('.tab-btn'));
-        const activeButton = buttons.find(btn => btn.getAttribute('onclick').includes(tabId));
-        if (activeButton) activeButton.classList.add('active');
+        buttons.forEach(btn => {
+            const isTarget = btn.getAttribute('onclick') && btn.getAttribute('onclick').includes(tabId);
+            if (isTarget) {
+                btn.classList.add('active');
+                btn.setAttribute('aria-selected', 'true');
+                btn.setAttribute('tabindex', '0');
+                // move keyboard focus so screen readers and keyboard users land on the active tab
+                try { btn.focus(); } catch (e) {}
+            } else {
+                btn.classList.remove('active');
+                btn.setAttribute('aria-selected', 'false');
+                btn.setAttribute('tabindex', '-1');
+            }
+        });
     }
+
+    // Basic keyboard navigation for the tabs (left/right arrows, home, end)
+    (function attachTabKeyboard() {
+        const tabButtons = Array.from(document.querySelectorAll('.tab-btn'));
+        if (!tabButtons.length) return;
+
+        function focusTab(index) {
+            const btn = tabButtons[index];
+            if (!btn) return;
+            const clickHandler = btn.onclick || (() => {});
+            // trigger the same handler by calling click — which will call switchTab
+            btn.click();
+        }
+
+        tabButtons.forEach((btn, idx) => {
+            btn.addEventListener('keydown', (e) => {
+                const key = e.key;
+                if (key === 'ArrowRight') {
+                    e.preventDefault();
+                    focusTab((idx + 1) % tabButtons.length);
+                } else if (key === 'ArrowLeft') {
+                    e.preventDefault();
+                    focusTab((idx - 1 + tabButtons.length) % tabButtons.length);
+                } else if (key === 'Home') {
+                    e.preventDefault();
+                    focusTab(0);
+                } else if (key === 'End') {
+                    e.preventDefault();
+                    focusTab(tabButtons.length - 1);
+                } else if (key === 'Enter' || key === ' ') {
+                    // Space or Enter should activate
+                    e.preventDefault();
+                    btn.click();
+                }
+            });
+        });
+    })();
 
     // Generic Runner for Assignments
     async function runAssignment(id) {

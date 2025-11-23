@@ -22,119 +22,125 @@
     </header>
 
     <!-- Navigation -->
-    <div class="tabs" role="tablist" aria-label="Assignments navigation">
+    <div class="tabs" role="tablist" aria-label="Modules navigation">
         <button class="tab-btn active" role="tab" aria-selected="true" tabindex="0"
             onclick="switchTab('home')">Home</button>
-        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a1')">Assignment
+        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a1')">Module
             1</button>
-        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a2')">Assignment
+        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a2')">Module
             2</button>
-        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a3')">Assignment
+        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a3')">Module
             3</button>
-        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a4')">Assignment
+        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a4')">Module
             4</button>
-        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a56')">Assignment 5 &
+        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a56')">Module 5 &
             6</button>
-        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a7')">Assignment
+        <button class="tab-btn" role="tab" aria-selected="false" tabindex="-1" onclick="switchTab('a7')">Module
             7</button>
     </div>
 
     <main>
         <!-- HOME TAB -->
         <div id="home" class="tab-content active">
-            <h2>Welcome to My Portfolio</h2>
-            <p>Select an assignment below to view the implementation and results.</p>
+            <h2>CSC 8830: Computer Vision Coursework Demo</h2>
+            <div class="home-meta" style="display:grid; grid-template-columns: auto 1fr; gap:0.25rem 1rem; align-items:center; margin:0 0 1rem 0;">
+                <span style="font-weight:700;">Name:</span>
+                <span>Avyuktkrishna (Krishna) Ramasamy</span>
+                <span style="font-weight:700;">Instructor:</span>
+                <span>Dr. Ashwin Ashok</span>
+            </div>
+            <p>Please select a module below, in order to view and test the implementation, along with the relevant details.</p>
 
             <div class="home-grid">
                 <div class="card" onclick="switchTab('a1')">
-                    <h3>Assignment 1</h3>
-                    <p>Basic Image Processing & Filters</p>
+                    <h3>Module 1</h3>
+                    <p>Object Dimension Calculator</p>
                 </div>
                 <div class="card" onclick="switchTab('a2')">
-                    <h3>Assignment 2</h3>
-                    <p>Edge Detection Algorithms</p>
+                    <h3>Module 2</h3>
+                    <p>Object Detection with Correlation-Based Template Matching</p>
                 </div>
                 <div class="card" onclick="switchTab('a3')">
-                    <h3>Assignment 3</h3>
-                    <p>Feature Matching & Homography</p>
+                    <h3>Module 3</h3>
+                    <p>Object Boundary Detection &amp; Segmentation</p>
                 </div>
                 <div class="card" onclick="switchTab('a4')">
-                    <h3>Assignment 4</h3>
+                    <h3>Module 4</h3>
                     <p>Optical Flow</p>
                 </div>
                 <div class="card" onclick="switchTab('a56')">
-                    <h3>Assignment 5 & 6</h3>
+                    <h3>Module 5 &amp; 6</h3>
                     <p>Deep Learning & Classification</p>
                 </div>
                 <div class="card" onclick="switchTab('a7')">
-                    <h3>Assignment 7</h3>
+                    <h3>Module 7</h3>
                     <p>Final Capstone Project</p>
                 </div>
             </div>
         </div>
 
-        <!-- ASSIGNMENT 1 -->
+        <!-- MODULE 1 -->
         <div id="a1" class="tab-content">
-            <h2>Assignment 1</h2>
+            <h2>Module 1</h2>
             <p class="description">Description: Enter parameters or data below to process.</p>
-            <div class="assignment-container">
+            <div class="module-container">
                 <textarea id="input-a1" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runAssignment('a1')">Run Assignment 1</button>
+                <button class="run-btn" onclick="runModule('a1')">Run Module 1</button>
                 <div id="output-a1" class="output-box">// Output will appear here...</div>
             </div>
         </div>
 
-        <!-- ASSIGNMENT 2 -->
+        <!-- MODULE 2 -->
         <div id="a2" class="tab-content">
-            <h2>Assignment 2</h2>
-            <p class="description">Description for Assignment 2.</p>
-            <div class="assignment-container">
+            <h2>Module 2</h2>
+            <p class="description">Description for Module 2.</p>
+            <div class="module-container">
                 <textarea id="input-a2" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runAssignment('a2')">Run Assignment 2</button>
+                <button class="run-btn" onclick="runModule('a2')">Run Module 2</button>
                 <div id="output-a2" class="output-box">// Output will appear here...</div>
             </div>
         </div>
 
-        <!-- ASSIGNMENT 3 -->
+        <!-- MODULE 3 -->
         <div id="a3" class="tab-content">
-            <h2>Assignment 3</h2>
-            <p class="description">Description for Assignment 3.</p>
-            <div class="assignment-container">
+            <h2>Module 3</h2>
+            <p class="description">Description for Module 3.</p>
+            <div class="module-container">
                 <textarea id="input-a3" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runAssignment('a3')">Run Assignment 3</button>
+                <button class="run-btn" onclick="runModule('a3')">Run Module 3</button>
                 <div id="output-a3" class="output-box">// Output will appear here...</div>
             </div>
         </div>
 
-        <!-- ASSIGNMENT 4 -->
+        <!-- MODULE 4 -->
         <div id="a4" class="tab-content">
-            <h2>Assignment 4</h2>
-            <p class="description">Description for Assignment 4.</p>
-            <div class="assignment-container">
+            <h2>Module 4</h2>
+            <p class="description">Description for Module 4.</p>
+            <div class="module-container">
                 <textarea id="input-a4" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runAssignment('a4')">Run Assignment 4</button>
+                <button class="run-btn" onclick="runModule('a4')">Run Module 4</button>
                 <div id="output-a4" class="output-box">// Output will appear here...</div>
             </div>
         </div>
 
-        <!-- ASSIGNMENT 5 & 6 -->
+        <!-- MODULE 5 & 6 -->
         <div id="a56" class="tab-content">
-            <h2>Assignment 5 & 6</h2>
-            <p class="description">Combined advanced assignment.</p>
-            <div class="assignment-container">
+            <h2>Module 5 & 6</h2>
+            <p class="description">Combined advanced module.</p>
+            <div class="module-container">
                 <textarea id="input-a56" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runAssignment('a56')">Run Assignment 5 & 6</button>
+                <button class="run-btn" onclick="runModule('a56')">Run Module 5 & 6</button>
                 <div id="output-a56" class="output-box">// Output will appear here...</div>
             </div>
         </div>
 
-        <!-- ASSIGNMENT 7 -->
+        <!-- MODULE 7 -->
         <div id="a7" class="tab-content">
-            <h2>Assignment 7</h2>
+            <h2>Module 7</h2>
             <p class="description">Final Project.</p>
-            <div class="assignment-container">
+            <div class="module-container">
                 <textarea id="input-a7" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runAssignment('a7')">Run Assignment 7</button>
+                <button class="run-btn" onclick="runModule('a7')">Run Module 7</button>
                 <div id="output-a7" class="output-box">// Output will appear here...</div>
             </div>
         </div>

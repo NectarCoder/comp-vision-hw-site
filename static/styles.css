@@ -42,7 +42,7 @@ header,
 .tab-btn,
 main,
 .card,
-.assignment-container,
+.module-container,
 textarea,
 button.run-btn,
 .output-box,
@@ -59,7 +59,7 @@ button.run-btn,
     .tab-btn,
     main,
     .card,
-    .assignment-container,
+    .module-container,
     textarea,
     button.run-btn,
     .output-box,
@@ -195,7 +195,7 @@ main {
 }
 
 .card,
-.assignment-container {
+.module-container {
     background: var(--surface);
     border-radius: 8px;
     border: 1px solid var(--border);
@@ -212,7 +212,7 @@ main {
 .card p { font-size: 0.9rem; color: var(--muted); }
 
 /* Inputs & Outputs */
-.assignment-container {
+.module-container {
     padding: 2rem;
 }
 

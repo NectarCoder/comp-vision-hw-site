@@ -22,7 +22,7 @@ def favicon():
     """
     return send_from_directory(app.static_folder, 'favicon.ico')
 
-# --- Assignment Stubs ---
+# --- Module Stubs ---
 # These are the endpoints your Javascript will call.
 # You will eventually import your actual homework scripts here.
 
@@ -31,13 +31,13 @@ def handle_a1():
     data = request.json
     user_input = data.get('input', '')
     
-    # TODO: Connect your actual Assignment 1 Python code here
-    # Example: result = assignment1.run(user_input)
+    # TODO: Connect your actual Module 1 Python code here
+    # Example: result = module1.run(user_input)
     
     # Simulating processing time
     time.sleep(0.5) 
     
-    response = f"[Stub] Assignment 1 processed: '{user_input}'\n(Replace this logic in app.py with your real CV code)"
+    response = f"[Stub] Module 1 processed: '{user_input}'\n(Replace this logic in app.py with your real CV code)"
     return jsonify({'result': response})
 
 @app.route('/api/a2', methods=['POST'])
@@ -45,8 +45,8 @@ def handle_a2():
     data = request.json
     user_input = data.get('input', '')
     
-    # TODO: Connect Assignment 2 code
-    response = f"[Stub] Assignment 2 executed on input length: {len(user_input)}"
+    # TODO: Connect Module 2 code
+    response = f"[Stub] Module 2 executed on input length: {len(user_input)}"
     return jsonify({'result': response})
 
 @app.route('/api/a3', methods=['POST'])
@@ -54,8 +54,8 @@ def handle_a3():
     data = request.json
     user_input = data.get('input', '')
     
-    # TODO: Connect Assignment 3 code
-    response = f"[Stub] Assignment 3 received data."
+    # TODO: Connect Module 3 code
+    response = f"[Stub] Module 3 received data."
     return jsonify({'result': response})
 
 @app.route('/api/a4', methods=['POST'])
@@ -63,8 +63,8 @@ def handle_a4():
     data = request.json
     user_input = data.get('input', '')
     
-    # TODO: Connect Assignment 4 code
-    response = f"[Stub] Assignment 4 logic placeholder."
+    # TODO: Connect Module 4 code
+    response = f"[Stub] Module 4 logic placeholder."
     return jsonify({'result': response})
 
 @app.route('/api/a56', methods=['POST'])
@@ -72,8 +72,8 @@ def handle_a56():
     data = request.json
     user_input = data.get('input', '')
     
-    # TODO: Connect Assignment 5 & 6 code
-    response = f"[Stub] Assignment 5 & 6 complex processing placeholder."
+    # TODO: Connect Module 5 & 6 code
+    response = f"[Stub] Module 5 & 6 complex processing placeholder."
     return jsonify({'result': response})
 
 @app.route('/api/a7', methods=['POST'])
@@ -81,8 +81,8 @@ def handle_a7():
     data = request.json
     user_input = data.get('input', '')
     
-    # TODO: Connect Assignment 7 code
-    response = f"[Stub] Assignment 7 final project placeholder."
+    # TODO: Connect Module 7 code
+    response = f"[Stub] Module 7 final project placeholder."
     return jsonify({'result': response})
 
 if __name__ == '__main__':

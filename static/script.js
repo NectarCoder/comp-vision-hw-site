@@ -58,7 +58,7 @@ function switchTab(tabId) {
     });
 })();
 
-async function runAssignment(id) {
+async function runModule(id) {
     const inputElem = document.getElementById(`input-${id}`);
     const outputElem = document.getElementById(`output-${id}`);
     const textData = inputElem.value;

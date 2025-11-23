@@ -2,7 +2,9 @@ from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
 import time
 
-app = Flask(__name__)
+# Serve static assets from the templates folder so they can be moved
+# from /static into /templates while keeping the same "url_for('static', ...)"
+app = Flask(__name__, static_folder='templates', static_url_path='/static')
 CORS(app)  # Enable CORS for all routes
 
 # --- Routes ---

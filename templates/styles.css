@@ -114,6 +114,10 @@ header {
 
 h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--primary); }
 
+/* Make the main title clearly interactive when clickable */
+#site-title { cursor: pointer; display: inline-block; }
+#site-title:focus { outline: 3px solid rgba(37,99,235,0.18); outline-offset: 6px; border-radius: 6px; }
+
 /* Navigation Tabs (now floating rounded buttons) */
 .tabs {
     display: flex;
@@ -174,12 +178,20 @@ h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--primary); }
 /* Main Content */
 main {
     flex: 1;
+    /* allow the main content to scroll independently of header/tabs
+       so expanding content inside main (like the source panels)
+       won't cause the header / tabs to shrink vertically */
+    overflow-y: auto;
     padding: 2rem;
     max-width: 900px;
     margin: 0 auto;
     width: 100%;
     box-sizing: border-box;
 }
+
+/* Prevent header and the tab list from shrinking when main content grows */
+header,
+.tabs { flex: 0 0 auto; }
 
 .tab-content { display: none; animation: fadeIn 0.3s ease; }
 .tab-content.active { display: block; }
@@ -253,3 +265,56 @@ button.run-btn:hover { background-color: var(--primary-hover); }
     white-space: pre-wrap;
     min-height: 100px;
 }
+
+/* Source explorer styles */
+.source-section { margin-top: 1.25rem; }
+.source-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--primary);
+    padding: 0.45rem 0.75rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.source-toggle[aria-expanded="true"] { background: var(--tab-active-bg); }
+.source-toggle:focus { outline: 3px solid rgba(37,99,235,0.18); outline-offset: 4px; }
+
+.source-panel {
+    margin-top: 0.75rem;
+    /* start collapsed: 0 height, no inner padding, hidden overflow */
+    max-height: 0;
+    padding: 0 1rem;
+    border-radius: 8px;
+    border: 1px dashed var(--border);
+    background: var(--surface-hover);
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-8px);
+    /* smooth open/close: height + opacity + transform + padding */
+    transition: max-height 320ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease, transform 220ms ease, padding 220ms ease;
+}
+.source-files { display:flex; gap:0.5rem; flex-wrap:wrap; margin-bottom:0.75rem; opacity:0; transform: translateY(-6px); transition: opacity 180ms ease, transform 180ms ease; }
+.source-file { background: var(--surface); border-radius: 6px; padding: 0.4rem 0.6rem; border: 1px solid var(--border); cursor: pointer; font-family: monospace; color: var(--text); }
+.source-file:hover { border-color: var(--primary); transform: translateY(-1px); }
+
+.source-code { background: var(--surface); border-radius: 6px; padding: 0.75rem; border: 1px solid var(--border); min-height: 120px; overflow:auto; font-family: 'Courier New', monospace; color: var(--text); opacity:0; transform: translateY(-6px); transition: opacity 180ms ease, transform 180ms ease; }
+.source-code code { display:block; white-space: pre; }
+
+/* Make sure panels look and read well when hidden (visually collapsed) */
+.source-panel.open, .video-panel.open { max-height: 1200px; padding: 1rem; opacity: 1; transform: translateY(0); }
+.source-panel.open .source-files, .source-panel.open .source-code { opacity: 1; transform: translateY(0); }
+
+/* Video explorer styles — visually similar to source explorer */
+.video-section { margin-top: 1rem; }
+.video-toggle { display: inline-flex; align-items: center; gap: 0.5rem; background: transparent; border: 1px solid var(--border); color: var(--primary); padding: 0.45rem 0.75rem; border-radius: 8px; cursor: pointer; font-weight: 600; }
+.video-toggle[aria-expanded="true"] { background: var(--tab-active-bg); }
+.video-toggle:focus { outline: 3px solid rgba(37,99,235,0.18); outline-offset: 4px; }
+.video-panel { margin-top: 0.75rem; /* collapsed by default - animated */ max-height: 0; padding: 0 1rem; border-radius: 8px; border: 1px dashed var(--border); background: var(--surface-hover); overflow:hidden; opacity:0; transform: translateY(-8px); transition: max-height 320ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease, transform 220ms ease, padding 220ms ease; }
+.video-panel.open { max-height: 1200px; padding: 1rem; opacity: 1; transform: translateY(0); }
+.video-container { min-height: 140px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); display:flex; align-items:center; justify-content:center; color:var(--muted); opacity:0; transform: translateY(-6px); transition: opacity 180ms ease, transform 180ms ease; }
+.video-panel.open .video-container { opacity:1; transform: translateY(0); }
+

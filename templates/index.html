@@ -12,7 +12,7 @@
 <body class="dark">
 
     <header>
-        <h1>Krishna's Computer Vision Coursework Site</h1>
+        <h1 id="site-title" role="button" tabindex="0" onclick="switchTab('home')" onkeydown="if(event.key==='Enter'||event.key===' ') switchTab('home')">Krishna's Computer Vision Coursework Site</h1>
         <div class="header-controls">
             <button id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme" title="Toggle color theme"
                 aria-pressed="true">
@@ -48,8 +48,24 @@
                 <span>Avyuktkrishna (Krishna) Ramasamy</span>
                 <span style="font-weight:700;">Instructor:</span>
                 <span>Dr. Ashwin Ashok</span>
+                <span style="font-weight:700;">Semester:</span>
+                <span>Fall 2025</span>
+                <span style="font-weight:700;">College:</span>
+                <span>Georgia State University, College of Arts &amp; Sciences - Department of Computer Science</span>
             </div>
-            <p>Please select a module below, in order to view and test the implementation, along with the relevant details.</p>
+            <div class="home-intro" role="region" aria-label="Introduction">
+                <p class="lead">
+                    In each module tab, you can:
+                </p>
+                <ul class="home-features" style="margin-top:0.5rem; margin-bottom:0.5rem;">
+                    <li>Test the program(s)</li>
+                    <li>Watch the tutorial video for each module</li>
+                    <li>Explore the source code</li>
+                </ul>
+                <p class="note" style="font-size:0.9rem; color:var(--muted-text);">
+                    If a section is not visible, try scrolling down and/or expand the collapsed panels <em>(they are collapsed by default)</em>.
+                </p>
+            </div>
 
             <div class="home-grid">
                 <div class="card" onclick="switchTab('a1')">
@@ -81,68 +97,170 @@
 
         <!-- MODULE 1 -->
         <div id="a1" class="tab-content">
-            <h2>Module 1</h2>
-            <p class="description">Description: Enter parameters or data below to process.</p>
+            <h2>Module 1 Assignment</h2>
+            <p class="description">Object Dimension Calculator</p>
             <div class="module-container">
                 <textarea id="input-a1" placeholder="Enter input data here..."></textarea>
                 <button class="run-btn" onclick="runModule('a1')">Run Module 1</button>
                 <div id="output-a1" class="output-box">// Output will appear here...</div>
             </div>
+            <!-- Watch the video (collapsed by default) -->
+            <section class="video-section" aria-labelledby="video-toggle-a1">
+                <button id="video-toggle-a1" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a1">Watch the video ▾</button>
+                <div id="video-panel-a1" class="video-panel">
+                    <div class="video-container" id="video-container-a1"><!-- video embed added later --></div>
+                </div>
+            </section>
+            <!-- Source code explorer (collapsed by default) -->
+            <section class="source-section" aria-labelledby="source-toggle-a1">
+                <button id="source-toggle-a1" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a1">View source code ▾</button>
+                <div id="source-panel-a1" class="source-panel">
+                    <div class="source-files" role="list">
+                        <button class="source-file" role="listitem" data-module="a1" data-filename="module1.py">module1.py</button>
+                    </div>
+                    <pre class="source-code" id="source-code-a1"><code></code></pre>
+                </div>
+            </section>
         </div>
 
         <!-- MODULE 2 -->
         <div id="a2" class="tab-content">
-            <h2>Module 2</h2>
-            <p class="description">Description for Module 2.</p>
+            <h2>Module 2 Assignment</h2>
+            <p class="description">Object Detection with Correlation-Based Template Matching</p>
             <div class="module-container">
                 <textarea id="input-a2" placeholder="Enter input data here..."></textarea>
                 <button class="run-btn" onclick="runModule('a2')">Run Module 2</button>
                 <div id="output-a2" class="output-box">// Output will appear here...</div>
             </div>
+            <!-- Watch the video (collapsed by default) -->
+            <section class="video-section" aria-labelledby="video-toggle-a2">
+                <button id="video-toggle-a2" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a2">Watch the video ▾</button>
+                <div id="video-panel-a2" class="video-panel">
+                    <div class="video-container" id="video-container-a2"><!-- video embed added later --></div>
+                </div>
+            </section>
+            <!-- Source code explorer (collapsed by default) -->
+            <section class="source-section" aria-labelledby="source-toggle-a2">
+                <button id="source-toggle-a2" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a2">View source code ▾</button>
+                <div id="source-panel-a2" class="source-panel">
+                    <div class="source-files" role="list">
+                        <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part1.py">module2_part1.py</button>
+                    </div>
+                    <pre class="source-code" id="source-code-a2"><code></code></pre>
+                </div>
+            </section>
         </div>
 
         <!-- MODULE 3 -->
         <div id="a3" class="tab-content">
-            <h2>Module 3</h2>
-            <p class="description">Description for Module 3.</p>
+            <h2>Module 3 Assignment</h2>
+            <p class="description">Object Boundary Detection &amp; Segmentation</p>
             <div class="module-container">
                 <textarea id="input-a3" placeholder="Enter input data here..."></textarea>
                 <button class="run-btn" onclick="runModule('a3')">Run Module 3</button>
                 <div id="output-a3" class="output-box">// Output will appear here...</div>
             </div>
+            <!-- Watch the video (collapsed by default) -->
+            <section class="video-section" aria-labelledby="video-toggle-a3">
+                <button id="video-toggle-a3" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a3">Watch the video ▾</button>
+                <div id="video-panel-a3" class="video-panel">
+                    <div class="video-container" id="video-container-a3"><!-- video embed added later --></div>
+                </div>
+            </section>
+            <!-- Source code explorer (collapsed by default) -->
+            <section class="source-section" aria-labelledby="source-toggle-a3">
+                <button id="source-toggle-a3" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a3">View source code ▾</button>
+                <div id="source-panel-a3" class="source-panel">
+                    <div class="source-files" role="list">
+                        <button class="source-file" role="listitem" data-module="a3" data-filename="module3_part1.py">module3_part1.py</button>
+                    </div>
+                    <pre class="source-code" id="source-code-a3"><code></code></pre>
+                </div>
+            </section>
         </div>
 
         <!-- MODULE 4 -->
         <div id="a4" class="tab-content">
-            <h2>Module 4</h2>
-            <p class="description">Description for Module 4.</p>
+            <h2>Module 4 Assignment</h2>
+            <p class="description">Image Stitching &amp; SIFT Feature Extraction</p>
             <div class="module-container">
                 <textarea id="input-a4" placeholder="Enter input data here..."></textarea>
                 <button class="run-btn" onclick="runModule('a4')">Run Module 4</button>
                 <div id="output-a4" class="output-box">// Output will appear here...</div>
             </div>
+            <!-- Watch the video (collapsed by default) -->
+            <section class="video-section" aria-labelledby="video-toggle-a4">
+                <button id="video-toggle-a4" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a4">Watch the video ▾</button>
+                <div id="video-panel-a4" class="video-panel">
+                    <div class="video-container" id="video-container-a4"><!-- video embed added later --></div>
+                </div>
+            </section>
+            <!-- Source code explorer (collapsed by default) -->
+            <section class="source-section" aria-labelledby="source-toggle-a4">
+                <button id="source-toggle-a4" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a4">View source code ▾</button>
+                <div id="source-panel-a4" class="source-panel">
+                    <div class="source-files" role="list">
+                        <button class="source-file" role="listitem" data-module="a4" data-filename="module4_part1.py">module4_part1.py</button>
+                    </div>
+                    <pre class="source-code" id="source-code-a4"><code></code></pre>
+                </div>
+            </section>
         </div>
 
         <!-- MODULE 5 & 6 -->
         <div id="a56" class="tab-content">
-            <h2>Module 5 & 6</h2>
-            <p class="description">Combined advanced module.</p>
+            <h2>Module 5 &amp; 6 Assignment</h2>
+            <p class="description">Real-Time Object Tracker</p>
             <div class="module-container">
                 <textarea id="input-a56" placeholder="Enter input data here..."></textarea>
                 <button class="run-btn" onclick="runModule('a56')">Run Module 5 & 6</button>
                 <div id="output-a56" class="output-box">// Output will appear here...</div>
             </div>
+            <!-- Watch the video (collapsed by default) -->
+            <section class="video-section" aria-labelledby="video-toggle-a56">
+                <button id="video-toggle-a56" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a56">Watch the video ▾</button>
+                <div id="video-panel-a56" class="video-panel">
+                    <div class="video-container" id="video-container-a56"><!-- video embed added later --></div>
+                </div>
+            </section>
+            <!-- Source code explorer (collapsed by default) -->
+            <section class="source-section" aria-labelledby="source-toggle-a56">
+                <button id="source-toggle-a56" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a56">View source code ▾</button>
+                <div id="source-panel-a56" class="source-panel">
+                    <div class="source-files" role="list">
+                        <button class="source-file" role="listitem" data-module="a56" data-filename="module5_6_part1.py">module5_6_part1.py</button>
+                    </div>
+                    <pre class="source-code" id="source-code-a56"><code></code></pre>
+                </div>
+            </section>
         </div>
 
         <!-- MODULE 7 -->
         <div id="a7" class="tab-content">
-            <h2>Module 7</h2>
-            <p class="description">Final Project.</p>
+            <h2>Module 7 Assignment</h2>
+            <p class="description">Object Dimension Calculator using Calibrated Stereo; Pose Estimation &amp; Hand Tracking</p>
             <div class="module-container">
                 <textarea id="input-a7" placeholder="Enter input data here..."></textarea>
                 <button class="run-btn" onclick="runModule('a7')">Run Module 7</button>
                 <div id="output-a7" class="output-box">// Output will appear here...</div>
             </div>
+            <!-- Watch the video (collapsed by default) -->
+            <section class="video-section" aria-labelledby="video-toggle-a7">
+                <button id="video-toggle-a7" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a7">Watch the video ▾</button>
+                <div id="video-panel-a7" class="video-panel">
+                    <div class="video-container" id="video-container-a7"><!-- video embed added later --></div>
+                </div>
+            </section>
+            <!-- Source code explorer (collapsed by default) -->
+            <section class="source-section" aria-labelledby="source-toggle-a7">
+                <button id="source-toggle-a7" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a7">View source code ▾</button>
+                <div id="source-panel-a7" class="source-panel">
+                    <div class="source-files" role="list">
+                        <button class="source-file" role="listitem" data-module="a7" data-filename="module7_part1.py">module7_part1.py</button>
+                    </div>
+                    <pre class="source-code" id="source-code-a7"><code></code></pre>
+                </div>
+            </section>
         </div>
 
     </main>

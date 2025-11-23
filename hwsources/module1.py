@@ -124,11 +124,22 @@ def main():
     print("=== Dimension Calculator Started ===")
     
     # 1. Load Image
-    img_path = input("Enter image filename/path (e.g., test.jpg): ").strip()
-    
+    user_input = input("Enter image filename/path (e.g., test.jpg): ").strip()
+
+    # Expand user and convert to an absolute or relative path.
+    img_path = os.path.expanduser(user_input)
+
+    # If the path doesn't exist in the current working directory, try
+    # resolving it relative to this script's directory (useful when the
+    # image sits next to the script but the cwd is the project root).
     if not os.path.exists(img_path):
-        print(f"[ERROR] File '{img_path}' not found.")
-        return
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        alt_path = os.path.join(script_dir, img_path)
+        if os.path.exists(alt_path):
+            img_path = alt_path
+        else:
+            print(f"[ERROR] File '{user_input}' not found.")
+            return
 
     original_image = cv2.imread(img_path)
     if original_image is None:

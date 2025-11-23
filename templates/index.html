@@ -5,13 +5,66 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Computer Vision Coursework</title>
     <style>
+        /* Light theme (root) */
         :root {
             --primary: #2563eb;
             --primary-hover: #1d4ed8;
             --bg: #f8fafc;
             --surface: #ffffff;
             --text: #1e293b;
+            --muted: #64748b;
             --border: #e2e8f0;
+            --output-bg: #0f172a;
+            --output-text: #10b981;
+            --surface-hover: #f1f5f9;
+        }
+
+        /* Dark theme overrides - applied when <body> has .dark */
+        body.dark {
+            --primary: #60a5fa; /* lighter blue for dark */
+            --primary-hover: #93c5fd;
+            --bg: #0b1220;
+            --surface: #0f1724;
+            --text: #e6eef6;
+            --muted: #9aa8b4;
+            --border: rgba(255,255,255,0.06);
+            --output-bg: #0b1220;
+            --output-text: #7ee787;
+            --surface-hover: rgba(255,255,255,0.02);
+        }
+
+        /* Smooth transitions for theme changes (colors & surfaces) */
+        :root,
+        body,
+        header,
+        .tabs,
+        .tab-btn,
+        main,
+        .card,
+        .assignment-container,
+        textarea,
+        button.run-btn,
+        .output-box,
+        .theme-toggle {
+            transition: background-color 280ms ease, color 280ms ease, border-color 280ms ease, box-shadow 200ms ease;
+        }
+
+        /* Respect reduced motion preferences */
+        @media (prefers-reduced-motion: reduce) {
+            :root,
+            body,
+            header,
+            .tabs,
+            .tab-btn,
+            main,
+            .card,
+            .assignment-container,
+            textarea,
+            button.run-btn,
+            .output-box,
+            .theme-toggle {
+                transition: none !important;
+            }
         }
 
         body {
@@ -34,6 +87,30 @@
             box-shadow: 0 1px 2px rgba(0,0,0,0.05);
         }
 
+        /* header controls sits at the right of the header */
+        .header-controls {
+            margin-left: auto;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        /* Theme toggle button */
+        .theme-toggle {
+            background: none;
+            border: 1px solid var(--border);
+            padding: 6px 8px;
+            border-radius: 8px;
+            cursor: pointer;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            transition: background 0.15s, border-color 0.15s, transform 0.08s;
+            color: var(--text);
+        }
+
+        .theme-toggle:hover { transform: translateY(-1px); border-color: var(--primary); background: var(--surface-hover); }
+
         h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--primary); }
 
         /* Navigation Tabs */
@@ -50,14 +127,14 @@
             border: none;
             padding: 1rem 1.5rem;
             font-size: 0.95rem;
-            color: #64748b;
+            color: var(--muted);
             cursor: pointer;
             border-bottom: 2px solid transparent;
             transition: all 0.2s;
             white-space: nowrap;
         }
 
-        .tab-btn:hover { color: var(--primary); background-color: #f1f5f9; }
+        .tab-btn:hover { color: var(--primary); background-color: var(--surface-hover); }
         .tab-btn.active { color: var(--primary); border-bottom-color: var(--primary); font-weight: 600; }
 
         /* Main Content */
@@ -94,7 +171,7 @@
 
         .card:hover { transform: translateY(-2px); box-shadow: 0 4px 6px rgba(0,0,0,0.05); border-color: var(--primary); }
         .card h3 { margin-top: 0; color: var(--primary); }
-        .card p { font-size: 0.9rem; color: #64748b; }
+        .card p { font-size: 0.9rem; color: var(--muted); }
 
         /* Inputs & Outputs */
         .assignment-container {
@@ -133,8 +210,8 @@
 
         .output-box {
             margin-top: 1.5rem;
-            background: #1e293b;
-            color: #10b981;
+            background: var(--output-bg);
+            color: var(--output-text);
             padding: 1.5rem;
             border-radius: 6px;
             font-family: 'Courier New', monospace;
@@ -143,10 +220,16 @@
         }
     </style>
 </head>
-<body>
+<body class="dark">
 
 <header>
     <h1>Computer Vision Coursework Website</h1>
+    <div class="header-controls">
+        <!-- Theme toggle: shows Sun while in dark mode, Moon while in light mode -->
+        <button id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme" title="Toggle color theme" aria-pressed="true">
+            <span id="theme-icon" aria-hidden="true"></span>
+        </button>
+    </div>
 </header>
 
 <!-- Navigation -->
@@ -311,6 +394,45 @@
             console.error(error);
         }
     }
+
+    // Theme switching logic (default: dark)
+    (function () {
+        const themeToggle = document.getElementById('theme-toggle');
+        const iconEl = document.getElementById('theme-icon');
+
+        // simple SVGs
+        const sunSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M12 4V2M12 22v-2M20 12h2M2 12h2M18.36 5.64l1.41-1.41M4.22 19.78l1.41-1.41M18.36 18.36l1.41 1.41M4.22 4.22l1.41 1.41M12 8a4 4 0 100 8 4 4 0 000-8z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+        const moonSvg = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>';
+
+        function updateIcon(theme) {
+            // Per requirement: show moon icon when in light mode, show sun icon when in dark mode
+            if (theme === 'dark') {
+                iconEl.innerHTML = sunSvg;
+                themeToggle.setAttribute('aria-pressed', 'true');
+            } else {
+                iconEl.innerHTML = moonSvg;
+                themeToggle.setAttribute('aria-pressed', 'false');
+            }
+        }
+
+        function applyTheme(theme) {
+            if (theme === 'dark') document.body.classList.add('dark');
+            else document.body.classList.remove('dark');
+            updateIcon(theme);
+        }
+
+        // init
+        const stored = localStorage.getItem('site-theme');
+        const initial = stored || 'dark'; // default to dark per requirement
+        applyTheme(initial);
+
+        themeToggle.addEventListener('click', () => {
+            const isDark = document.body.classList.toggle('dark');
+            const nextTheme = isDark ? 'dark' : 'light';
+            localStorage.setItem('site-theme', nextTheme);
+            updateIcon(nextTheme);
+        });
+    })();
 </script>
 
 </body>

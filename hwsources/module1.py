@@ -1,36 +1,33 @@
 """
-CSC 8830 Assignment 1 - Dimension Calculator Script
-Author: [Your Name]
+CSC 8830 Computer Vision
+Dr. Ashwin Ashok
+Avyuktkrishna Ramasamy
+Module 1 Assignment - Object Dimension Calculator
 
-Description:
-    This script calculates the real-world dimensions of an object using 
-    perspective projection equations. It requires a calibration step to 
-    determine the camera's focal length (in pixels) or a manual entry 
-    of a known focal length.
+The purpose of the script is for calculating the 
+dimensions of an object by using the perspective 
+projection equations (Pinhole camera model). 
 
-Dependencies:
-    opencv-python (pip install opencv-python)
-    numpy (pip install numpy)
+Equation used is W/D = w/f --> W = (w*D)/f, where 
+ - w is the object's width in terms of pixels
+ - f is the camera's focal length in terms of pixels
+ - W is the object's width in real life (cm)
+ - D is the distance between camera and object (cm)
 
-Usage:
-    1. Run the script: python dimension_calculator.py
-    2. Enter the image filename when prompted.
-    3. Click two points on the image to define the dimension to measure.
-    4. Follow the console prompts to Calibrate or Measure.
-    5. Press 'r' to reset points, 'q' to quit.
+How to run the program :-
+ - Run this script
+ - When prompted, enter the image's filename (should 
+   be either in the same directory or full path should 
+   be provided)
+ - A separate window will pop up displaying the image, 
+   click two points to define the dimension to measure
+ - Once the points are selected, you can calculate the 
+   focal length, or assuming you have calculated the focal 
+   length, the real world measure of the object's selected 
+   dimension can be calculated
+ - Within the points selection window - 'r' to reset selection or 'q' to quit
 
-Theory:
-    Based on the Pinhole Camera Model:
-    w / f = W / D
-    
-    Where:
-    w = Object width in pixels (measured from image)
-    f = Focal length in pixels (internal camera parameter)
-    W = Real-world object width
-    D = Distance from camera to object
-
-    Therefore:
-    W = (w * D) / f
+The dependencies are opencv-python and numpy
 """
 
 import cv2
@@ -42,7 +39,7 @@ import os
 points = []
 image = None
 clone = None
-window_name = "Dimension Calculator"
+window_name = "Object Dimension Calculator"
 
 def click_event(event, x, y, flags, param):
     """
@@ -68,6 +65,8 @@ def click_event(event, x, y, flags, param):
             dist_px = math.sqrt((points[0][0] - points[1][0])**2 + (points[0][1] - points[1][1])**2)
             print(f"\n[INFO] Points selected: {points}")
             print(f"[INFO] Pixel Distance (w): {dist_px:.2f} pixels")
+            cv2.imshow(window_name, image)  # Update the graphics buffer
+            cv2.waitKey(1)
             process_measurement(dist_px)
             
         cv2.imshow(window_name, image)
@@ -87,11 +86,10 @@ def process_measurement(pixel_width):
     
     if choice == '1':
         try:
-            real_width = float(input("Enter REAL width of the object (e.g., cm, in): "))
-            distance = float(input("Enter DISTANCE from camera to object (same units as width): "))
-            
-            # Formula: f = (w * D) / W
-            focal_length = (pixel_width * distance) / real_width
+            real_width = float(input("Enter REAL width of the object (cm): "))
+            distance = float(input("Enter DISTANCE from camera to object (same units in cm): "))
+            # Calculate focal length using helper
+            focal_length = calculate_focal_length(pixel_width, real_width, distance)
             print(f"\n[RESULT] Calculated Focal Length (f): {focal_length:.2f} pixels")
             print("KEEP THIS VALUE SAFE for measuring other objects at known distances!")
         except ValueError:
@@ -100,15 +98,14 @@ def process_measurement(pixel_width):
     elif choice == '2':
         try:
             focal_length = float(input("Enter known Focal Length (pixels): "))
-            distance = float(input("Enter DISTANCE from camera to object: "))
-            
-            # Formula: W = (w * D) / f
-            real_dim = (pixel_width * distance) / focal_length
-            
-            print(f"\n[RESULT] REAL WORLD DIMENSION: {real_dim:.4f} units")
+            distance = float(input("Enter DISTANCE from camera to object (cm): "))
+            # Calculate real-world dimension using helper
+            real_dim = calculate_real_dimension(pixel_width, focal_length, distance)
+
+            print(f"\n[RESULT] REAL WORLD DIMENSION: {real_dim:.4f} cm")
             
             # Draw result on image
-            cv2.putText(image, f"{real_dim:.2f} units", 
+            cv2.putText(image, f"{real_dim:.2f} cm", 
                        (points[0][0], points[0][1] - 10), 
                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
             cv2.imshow(window_name, image)
@@ -117,6 +114,34 @@ def process_measurement(pixel_width):
             print("[ERROR] Invalid numeric input.")
     else:
         print("[INFO] Action cancelled. Click new points to retry.")
+
+
+def calculate_focal_length(pixel_width, real_width, distance):
+        """
+        Compute focal length (in pixels) given:
+            - pixel_width: object's width measured in pixels
+            - real_width: real-world width (same units as distance)
+            - distance: distance from camera to object
+
+        Returns focal length (float). Raises ValueError for invalid inputs.
+        """
+        if real_width == 0:
+                raise ValueError("Real width must be non-zero")
+        return (pixel_width * distance) / real_width
+
+
+def calculate_real_dimension(pixel_width, focal_length, distance):
+        """
+        Compute real-world dimension given:
+            - pixel_width: object's width measured in pixels
+            - focal_length: focal length in pixels
+            - distance: distance from camera to object
+
+        Returns real-world dimension (float). Raises ValueError for invalid inputs.
+        """
+        if focal_length == 0:
+                raise ValueError("Focal length must be non-zero")
+        return (pixel_width * distance) / focal_length
 
 def main():
     global image, clone

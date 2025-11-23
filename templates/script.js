@@ -58,6 +58,90 @@ function switchTab(tabId) {
     });
 })();
 
+/* ---------- Source explorer (collapsed panels) ---------- */
+(function () {
+    function togglePanel(toggleBtn) {
+        const panelId = toggleBtn.getAttribute('aria-controls');
+        const panel = document.getElementById(panelId);
+        const expanded = toggleBtn.getAttribute('aria-expanded') === 'true';
+
+        toggleBtn.setAttribute('aria-expanded', String(!expanded));
+
+        // Support both source and video toggle buttons. Choose the
+        // correct label text depending on the button type.
+        const isVideo = toggleBtn.classList.contains('video-toggle');
+        // toggle open state using a CSS class so transitions (opacity/height)
+        // can animate. Keep ARIA attributes in sync.
+        if (expanded) {
+            panel.classList.remove('open');
+            panel.setAttribute('aria-hidden', 'true');
+            toggleBtn.setAttribute('aria-expanded', 'false');
+        } else {
+            panel.classList.add('open');
+            panel.setAttribute('aria-hidden', 'false');
+            toggleBtn.setAttribute('aria-expanded', 'true');
+        }
+
+        if (isVideo) {
+            toggleBtn.innerText = expanded ? 'Watch the video ▾' : 'Watch the video ▴';
+        } else {
+            toggleBtn.innerText = expanded ? 'View source code ▾' : 'View source code ▴';
+        }
+    }
+
+    function handleFileSelection(btn) {
+        // For now the project requires the actual file contents to be blank —
+        // we intentionally set an empty code area. This placeholder keeps
+        // the interactive UI consistent for future population.
+        const moduleId = btn.dataset.module; // e.g. "a1"
+        const codeEl = document.querySelector(`#source-code-${moduleId} code`);
+        if (!codeEl) return;
+
+        // Clear content (leave blank as requested) and focus the code area
+        codeEl.textContent = '';
+        codeEl.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    document.addEventListener('click', (e) => {
+        const t = e.target;
+        if (t.classList && t.classList.contains('source-toggle')) {
+            togglePanel(t);
+            return;
+        }
+
+        if (t.classList && t.classList.contains('video-toggle')) {
+            togglePanel(t);
+            return;
+        }
+
+        if (t.classList && t.classList.contains('source-file')) {
+            handleFileSelection(t);
+            return;
+        }
+    });
+
+    // keyboard support for toggles & files (Enter/Space)
+    document.addEventListener('keydown', (e) => {
+        const target = e.target;
+        if (!target) return;
+
+        if (target.classList && (target.classList.contains('source-toggle') || target.classList.contains('video-toggle'))) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                togglePanel(target);
+            }
+        }
+
+        if (target.classList && target.classList.contains('source-file')) {
+            if (e.key === 'Enter' || e.key === ' ') {
+                e.preventDefault();
+                handleFileSelection(target);
+            }
+        }
+    });
+
+})();
+
 async function runModule(id) {
     const inputElem = document.getElementById(`input-${id}`);
     const outputElem = document.getElementById(`output-${id}`);

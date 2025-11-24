@@ -1,4 +1,4 @@
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, abort
 from flask_cors import CORS
 from hwsources.module1 import calculate_focal_length, calculate_real_dimension
 
@@ -122,6 +122,37 @@ def handle_a7():
     # TODO: Connect Module 7 code
     response = f"[Stub] Module 7 final project placeholder."
     return jsonify({'result': response})
+
+
+@app.route('/source/<path:filename>')
+def serve_source(filename):
+    """Serve raw source files from the hwsources/ directory.
+
+    This implements a small, guarded endpoint so client-side UI can fetch
+    Python source (or other text files) dynamically. It strictly prevents
+    path traversal and only serves files with a safe extension.
+    """
+    # guard against directory traversal
+    if filename.startswith('/') or '..' in filename:
+        abort(404)
+
+    # restrict to safe file types
+    allowed_ext = {'.py', '.txt', '.md'}
+    ext = None
+    try:
+        import os
+        _, ext = os.path.splitext(filename)
+    except Exception:
+        abort(404)
+
+    if ext not in allowed_ext:
+        abort(404)
+
+    # deliver the file contents from the hwsources directory
+    try:
+        return send_from_directory('hwsources', filename, mimetype='text/plain')
+    except Exception:
+        abort(404)
 
 if __name__ == '__main__':
     # Running on 0.0.0.0 ensures it's accessible externally on your Azure VM

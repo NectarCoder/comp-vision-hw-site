@@ -301,8 +301,13 @@ button.run-btn:hover { background-color: var(--primary-hover); }
 .source-file { background: var(--surface); border-radius: 6px; padding: 0.4rem 0.6rem; border: 1px solid var(--border); cursor: pointer; font-family: monospace; color: var(--text); }
 .source-file:hover { border-color: var(--primary); transform: translateY(-1px); }
 
-.source-code { background: var(--surface); border-radius: 6px; padding: 0.75rem; border: 1px solid var(--border); min-height: 120px; overflow:auto; font-family: 'Courier New', monospace; color: var(--text); opacity:0; transform: translateY(-6px); transition: opacity 180ms ease, transform 180ms ease; }
+.source-code { background: var(--surface); border-radius: 6px; padding: 0.75rem; border: 1px solid var(--border); min-height: 240px; max-height: 520px; overflow:auto; font-family: 'Courier New', monospace; color: var(--text); opacity:0; transform: translateY(-6px); transition: opacity 180ms ease, transform 180ms ease; }
 .source-code code { display:block; white-space: pre; }
+
+/* Improve scrollbars for the code viewer so long files are comfortable */
+.source-code::-webkit-scrollbar { width: 12px; height: 12px; }
+.source-code::-webkit-scrollbar-thumb { background: rgba(37,99,235,0.14); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
+.source-code::-webkit-scrollbar-track { background: transparent; }
 
 /* Make sure panels look and read well when hidden (visually collapsed) */
 .source-panel.open, .video-panel.open { max-height: 1200px; padding: 1rem; opacity: 1; transform: translateY(0); }

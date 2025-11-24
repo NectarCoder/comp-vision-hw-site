@@ -7,6 +7,8 @@
     <title>Krishna's CSC 8830 Coursework</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <!-- Syntax highlighting for inline source previews -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
 </head>
 
 <body class="dark">
@@ -235,10 +237,10 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a1">
-                <button id="source-toggle-a1" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a1">View source code ▾</button>
+                <button id="source-toggle-a1" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a1">View CLI source code ▾</button>
                 <div id="source-panel-a1" class="source-panel">
                     <div class="source-files" role="list">
-                        <button class="source-file" role="listitem" data-module="a1" data-filename="module1.py">module1.py</button>
+                        <button class="source-file" role="listitem" data-module="a1" data-filename="module1.py" data-source-path="module1.py">module1.py</button>
                     </div>
                     <pre class="source-code" id="source-code-a1"><code></code></pre>
                 </div>
@@ -263,7 +265,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a2">
-                <button id="source-toggle-a2" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a2">View source code ▾</button>
+                <button id="source-toggle-a2" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a2">View CLI source code ▾</button>
                 <div id="source-panel-a2" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part1.py">module2_part1.py</button>
@@ -291,7 +293,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a3">
-                <button id="source-toggle-a3" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a3">View source code ▾</button>
+                <button id="source-toggle-a3" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a3">View CLI source code ▾</button>
                 <div id="source-panel-a3" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a3" data-filename="module3_part1.py">module3_part1.py</button>
@@ -319,7 +321,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a4">
-                <button id="source-toggle-a4" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a4">View source code ▾</button>
+                <button id="source-toggle-a4" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a4">View CLI source code ▾</button>
                 <div id="source-panel-a4" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a4" data-filename="module4_part1.py">module4_part1.py</button>
@@ -347,7 +349,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a56">
-                <button id="source-toggle-a56" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a56">View source code ▾</button>
+                <button id="source-toggle-a56" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a56">View CLI source code ▾</button>
                 <div id="source-panel-a56" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a56" data-filename="module5_6_part1.py">module5_6_part1.py</button>
@@ -375,7 +377,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a7">
-                <button id="source-toggle-a7" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a7">View source code ▾</button>
+                <button id="source-toggle-a7" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a7">View CLI source code ▾</button>
                 <div id="source-panel-a7" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a7" data-filename="module7_part1.py">module7_part1.py</button>
@@ -387,6 +389,8 @@
 
     </main>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <script>/* lightweight init for highlight.js */ try { if (window.hljs && hljs.highlightAll) hljs.highlightAll(); } catch(e) { /* ignore */ }</script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 
 </body>

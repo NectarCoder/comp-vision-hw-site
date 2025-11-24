@@ -85,21 +85,80 @@ function switchTab(tabId) {
         if (isVideo) {
             toggleBtn.innerText = expanded ? 'Watch the video ▾' : 'Watch the video ▴';
         } else {
-            toggleBtn.innerText = expanded ? 'View source code ▾' : 'View source code ▴';
+            toggleBtn.innerText = expanded ? 'View CLI source code ▾' : 'View CLI source code ▴';
         }
     }
 
+    const LANGUAGE_MAP = {
+        py: 'python',
+        txt: 'plaintext',
+        md: 'markdown'
+    };
+
+    function cleanupLanguageClasses(el) {
+        el.classList.remove('hljs');
+        Array.from(el.classList)
+            .filter(cls => cls.startsWith('language-'))
+            .forEach(cls => el.classList.remove(cls));
+    }
+
     function handleFileSelection(btn) {
-        // For now the project requires the actual file contents to be blank —
-        // we intentionally set an empty code area. This placeholder keeps
-        // the interactive UI consistent for future population.
+        // Fetch the file from /source/<filename> and load it into the code pane.
         const moduleId = btn.dataset.module; // e.g. "a1"
         const codeEl = document.querySelector(`#source-code-${moduleId} code`);
         if (!codeEl) return;
 
-        // Clear content (leave blank as requested) and focus the code area
-        codeEl.textContent = '';
+        const sourcePath = btn.dataset.sourcePath;
+        if (!sourcePath) {
+            codeEl.textContent = '[Error] No source path configured for this file.';
+            return;
+        }
+
+        // Visual loading state
+        cleanupLanguageClasses(codeEl);
+        codeEl.textContent = 'Loading source…';
         codeEl.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+        fetch(`/source/${encodeURIComponent(sourcePath)}`)
+            .then(resp => {
+                if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+                return resp.text();
+            })
+            .then(text => {
+                const extMatch = sourcePath.split('.').pop()?.toLowerCase() || '';
+                const mappedLanguage = LANGUAGE_MAP[extMatch];
+
+                cleanupLanguageClasses(codeEl);
+                const highlightAvailable = typeof window !== 'undefined' && window.hljs;
+
+                if (highlightAvailable && (mappedLanguage ? hljs.getLanguage(mappedLanguage) : true)) {
+                    try {
+                        let highlighted;
+                        if (mappedLanguage && hljs.getLanguage(mappedLanguage)) {
+                            highlighted = hljs.highlight(text, { language: mappedLanguage, ignoreIllegals: true }).value;
+                            codeEl.innerHTML = highlighted;
+                            codeEl.classList.add('hljs', `language-${mappedLanguage}`);
+                        } else if (hljs.highlightAuto) {
+                            highlighted = hljs.highlightAuto(text).value;
+                            codeEl.innerHTML = highlighted;
+                            codeEl.classList.add('hljs');
+                        } else {
+                            codeEl.textContent = text;
+                        }
+                    } catch (err) {
+                        console.warn('Highlight.js failed, showing plain text.', err);
+                        codeEl.textContent = text;
+                    }
+                } else {
+                    codeEl.textContent = text;
+                }
+
+                // keep the loaded code visible and scroll to the top
+                codeEl.parentElement.scrollTop = 0;
+            })
+            .catch(err => {
+                codeEl.textContent = `[Error] Could not load source: ${err.message}`;
+            });
     }
 
     document.addEventListener('click', (e) => {

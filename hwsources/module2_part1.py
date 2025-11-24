@@ -20,199 +20,282 @@ Usage:
     1. Run the script - python module2_part1.py
     2. Provide the file path for the scene image with the object to be detected
 	3. Provide the file path for the template image specifying the object
-    4. Provide threshold value which should be between 0 and 1 (default is 0.9)
+    4. Using threshold 0.8
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from pathlib import Path
-from typing import List, Optional, Tuple
+import os
+from typing import List, Tuple
 
 import cv2
 import numpy as np
 
 
-DEFAULT_THRESHOLD = 0.9
-CORRELATION_METHOD = cv2.TM_CCOEFF_NORMED
-IOU_SUPPRESSION = 0.3
-NORMALIZE_EPS = 1e-6
+def non_max_suppression(boxes: List[Tuple[int, int, int, int]], scores: List[float], iou_thresh: float = 0.4):
+    """Simple non-max suppression for axis-aligned boxes.
+
+    boxes - list of (x1, y1, x2, y2)
+    scores - matching score for each box
+    Returns: indices of boxes to keep
+    """
+    if not boxes:
+        return []
+
+    boxes_arr = np.array(boxes, dtype=float)
+    scores_arr = np.array(scores, dtype=float)
+
+    x1 = boxes_arr[:, 0]
+    y1 = boxes_arr[:, 1]
+    x2 = boxes_arr[:, 2]
+    y2 = boxes_arr[:, 3]
+
+    areas = (x2 - x1 + 1) * (y2 - y1 + 1)
+    order = scores_arr.argsort()[::-1]
+
+    keep = []
+    while order.size > 0:
+        i = order[0]
+        keep.append(int(i))
+
+        xx1 = np.maximum(x1[i], x1[order[1:]])
+        yy1 = np.maximum(y1[i], y1[order[1:]])
+        xx2 = np.minimum(x2[i], x2[order[1:]])
+        yy2 = np.minimum(y2[i], y2[order[1:]])
+
+        w = np.maximum(0.0, xx2 - xx1 + 1)
+        h = np.maximum(0.0, yy2 - yy1 + 1)
+        inter = w * h
+
+        iou = inter / (areas[i] + areas[order[1:]] - inter)
+
+        inds = np.where(iou <= iou_thresh)[0]
+        order = order[inds + 1]
+
+    return keep
 
 
-@dataclass
-class MatchRegion:
-	score: float
-	top_left: Tuple[int, int]
-	bottom_right: Tuple[int, int]
+def match_template(
+    scene_path: str,
+    template_path: str,
+    threshold: float = 0.8,
+    save_result: bool = True,
+    *,
+    draw_all: bool = True,
+) -> bool:
+    """Run normalized cross-correlation template matching.
 
+    Returns True if at least one match >= threshold exists, otherwise False.
+    Saves an annotated image if save_result=True.
+    """
+    if not os.path.isfile(scene_path):
+        raise FileNotFoundError(f"Scene file not found: {scene_path}")
+    if not os.path.isfile(template_path):
+        raise FileNotFoundError(f"Template file not found: {template_path}")
 
-@dataclass
-class DetectionResult:
-	matches: List[MatchRegion]
-	annotated_image: Optional[Path]
+    scene = cv2.imread(scene_path)
+    template = cv2.imread(template_path)
+    if scene is None:
+        raise ValueError(f"Failed to load scene image: {scene_path}")
+    if template is None:
+        raise ValueError(f"Failed to load template image: {template_path}")
 
+    scene_gray = cv2.cvtColor(scene, cv2.COLOR_BGR2GRAY)
+    template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
 
-def load_image(path: Path, grayscale: bool) -> np.ndarray:
-	flag = cv2.IMREAD_GRAYSCALE if grayscale else cv2.IMREAD_COLOR
-	image = cv2.imread(str(path), flag)
-	if image is None:
-		raise FileNotFoundError(f"Unable to read image: {path}")
-	return image
+    th, tw = template_gray.shape[:2]
+    sh, sw = scene_gray.shape[:2]
+    if th > sh or tw > sw:
+        raise ValueError("Template is larger than scene — matching won't work.")
 
+    # Use normalized cross-correlation
+    res = cv2.matchTemplate(scene_gray, template_gray, cv2.TM_CCORR_NORMED)
 
-def match_template(template: np.ndarray, search: np.ndarray) -> np.ndarray:
-	if template.shape[0] > search.shape[0] or template.shape[1] > search.shape[1]:
-		raise ValueError("Template must be smaller than the search image")
-	return cv2.matchTemplate(search, template, CORRELATION_METHOD)
+    # Locate all positions where value >= threshold
+    # Get all locations where the response >= threshold
+    y_idxs, x_idxs = np.where(res >= threshold)
 
+    # If the image is large / threshold low this set may be huge; to keep
+    # processing robust we only keep the top-K candidate positions by score.
+    boxes = []
+    scores = []
+    for (y, x) in zip(y_idxs, x_idxs):
+        boxes.append((int(x), int(y), int(x + tw), int(y + th)))
+        scores.append(float(res[y, x]))
 
-def annotate_detections(image: np.ndarray, matches: List[MatchRegion]) -> np.ndarray:
-	output = image.copy()
-	for match in matches:
-		cv2.rectangle(output, match.top_left, match.bottom_right, (0, 255, 0), 2)
-	return output
+    # Keep only the top candidates (pre-NMS) to avoid extreme slowdowns
+    max_candidates = 50
+    if len(scores) > max_candidates:
+        order = np.argsort(scores)[::-1][:max_candidates]
+        boxes = [boxes[i] for i in order]
+        scores = [scores[i] for i in order]
 
+    found = len(boxes) > 0
 
-def detect_object(template_path: Path, search_path: Path, threshold: float) -> DetectionResult:
-	template_gray = enhance_for_matching(load_image(template_path, grayscale=True))
-	search_gray = enhance_for_matching(load_image(search_path, grayscale=True))
-	search_color = load_image(search_path, grayscale=False)
-	response = match_template(template_gray, search_gray)
-	matches = find_match_regions(response, template_gray.shape[::-1], threshold)
-	annotated_path: Optional[Path] = None
-	if matches:
-		annotated = annotate_detections(search_color, matches)
-		suffix = search_path.suffix or ".png"
-		annotated_path = search_path.with_name(f"{search_path.stem}_detections{suffix}")
-		annotated_path.parent.mkdir(parents=True, exist_ok=True)
-		cv2.imwrite(str(annotated_path), annotated)
-	return DetectionResult(matches, annotated_path)
+    # If there are many overlapping boxes, cluster them via NMS
+    if found:
+        keep_idxs = non_max_suppression(boxes, scores, iou_thresh=0.35)
+        kept_boxes = [boxes[i] for i in keep_idxs]
+        kept_scores = [scores[i] for i in keep_idxs]
 
+        # Decide whether to draw all kept boxes or only the highest-confidence one
+        out = scene.copy()
+        if not draw_all:
+            # keep only the single highest-score detection (this forces the matcher
+            # to scan the full response map and still return the most confident match)
+            best_idx = int(np.argmax(kept_scores))
+            kept_boxes = [kept_boxes[best_idx]]
+            kept_scores = [kept_scores[best_idx]]
 
-def prompt_path(prompt_text: str) -> Path:
-	return Path(input(prompt_text).strip())
+        # Find the highest-confidence kept detection (if any) so we can highlight it
+        best_idx = 0
+        if kept_scores:
+            best_idx = int(np.argmax(kept_scores))
 
+        # Draw all detections first (green). Then draw the best one with a thicker red box
+        for i, (box, score) in enumerate(zip(kept_boxes, kept_scores)):
+            x1, y1, x2, y2 = box
+            cv2.rectangle(out, (x1, y1), (x2, y2), (0, 200, 0), 2)
+            text = f"{score:.2f}"
+            cv2.putText(out, text, (x1, max(10, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
 
-def find_match_regions(
-	response: np.ndarray,
-	template_size: Tuple[int, int],
-	threshold: float,
-) -> List[MatchRegion]:
-	if response.size == 0:
-		return []
-	kernel_size = _nms_kernel_size(template_size)
-	kernel = np.ones(kernel_size, dtype=np.uint8)
-	max_map = cv2.dilate(response, kernel)
-	mask = (response >= threshold) & (response == max_map)
-	locations = np.argwhere(mask)
-	matches: List[MatchRegion] = []
-	for (y, x) in locations:
-		score = float(response[y, x])
-		top_left = (int(x), int(y))
-		bottom_right = (top_left[0] + template_size[0], top_left[1] + template_size[1])
-		matches.append(MatchRegion(score, top_left, bottom_right))
-	matches.sort(key=lambda m: m.score, reverse=True)
-	return _suppress_overlaps(matches, IOU_SUPPRESSION)
+        # Highlight the single best detection in red with a thicker line and label
+        if kept_boxes:
+            bx = kept_boxes[best_idx]
+            bscore = kept_scores[best_idx]
+            x1, y1, x2, y2 = bx
+            cv2.rectangle(out, (x1, y1), (x2, y2), (0, 0, 200), 3)
+            label = f"BEST {bscore:.2f}"
+            cv2.putText(out, label, (x1, max(20, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 200), 2)
 
+        if save_result:
+            base, ext = os.path.splitext(scene_path)
+            # Use template file name to avoid overwriting results when multiple
+            # templates are matched against the same scene image.
+            tpl_name = os.path.splitext(os.path.basename(template_path))[0]
+            out_path = f"{base}_matched_{tpl_name}{ext}"
+            cv2.imwrite(out_path, out)
+            print(f"Result saved to: {out_path}")
 
-def enhance_for_matching(image: np.ndarray) -> np.ndarray:
-	"""Improve grayscale contrast and normalize distribution for template matching."""
-	if image.dtype != np.uint8:
-		image = image.astype(np.uint8)
-	equalized = cv2.equalizeHist(image)
-	float_img = equalized.astype(np.float32) / 255.0
-	mean = float(np.mean(float_img))
-	std = float(np.std(float_img)) + NORMALIZE_EPS
-	standardized = (float_img - mean) / std
-	return standardized
+        # Explain what we found
+        if draw_all:
+            print(f"Detected {len(kept_boxes)} match(es) (threshold={threshold}).")
+        else:
+            print(f"Detected 1 best match (score={kept_scores[0]:.2f}) (threshold={threshold}).")
+        return True
 
-
-def _nms_kernel_size(template_size: Tuple[int, int]) -> Tuple[int, int]:
-	width, height = template_size
-	w = max(1, width // 4)
-	h = max(1, height // 4)
-	if w % 2 == 0:
-		w += 1
-	if h % 2 == 0:
-		h += 1
-	return w, h
-
-
-def _suppress_overlaps(matches: List[MatchRegion], iou_threshold: float) -> List[MatchRegion]:
-	kept: List[MatchRegion] = []
-	for candidate in matches:
-		if all(_iou(candidate, existing) < iou_threshold for existing in kept):
-			kept.append(candidate)
-	return kept
-
-
-def _iou(a: MatchRegion, b: MatchRegion) -> float:
-	ax1, ay1 = a.top_left
-	ax2, ay2 = a.bottom_right
-	bx1, by1 = b.top_left
-	bx2, by2 = b.bottom_right
-	inter_x1 = max(ax1, bx1)
-	inter_y1 = max(ay1, by1)
-	inter_x2 = min(ax2, bx2)
-	inter_y2 = min(ay2, by2)
-	inter_w = max(0, inter_x2 - inter_x1)
-	inter_h = max(0, inter_y2 - inter_y1)
-	inter_area = inter_w * inter_h
-	a_area = (ax2 - ax1) * (ay2 - ay1)
-	b_area = (bx2 - bx1) * (by2 - by1)
-	union = a_area + b_area - inter_area
-	if union <= 0:
-		return 0.0
-	return inter_area / union
-
-
-def prompt_threshold() -> float:
-	raw_value = input(
-		f"Enter detection threshold between 0 and 1 [{DEFAULT_THRESHOLD}]: "
-	).strip()
-	if not raw_value:
-		return DEFAULT_THRESHOLD
-	try:
-		threshold = float(raw_value)
-	except ValueError:
-		print("Invalid threshold provided. Using default value.")
-		return DEFAULT_THRESHOLD
-	if not 0.0 < threshold <= 1.0:
-		print("Threshold must be within (0, 1]. Using default value.")
-		return DEFAULT_THRESHOLD
-	return threshold
+    print(f"No matches found (threshold={threshold}).")
+    return False
 
 
 def main() -> None:
-	print("Template Matching using normalized cross-correlation")
-	print("Provide a search image that contains the full scene and a smaller template of just the object.")
-	search_path = prompt_path("Enter the path to the search image: ")
-	template_path = prompt_path("Enter the path to the template image: ")
-	threshold = prompt_threshold()
-	try:
-		result = detect_object(template_path, search_path, threshold)
-	except FileNotFoundError as exc:
-		print(exc)
-		return
-	except ValueError as exc:
-		print(f"Error: {exc}")
-		return
-	if result.matches:
-		top_match = result.matches[0]
-		print(
-			f"Detected {len(result.matches)} match(es) with top score {top_match.score:.3f}"
-		)
-		for idx, match in enumerate(result.matches, start=1):
-			print(
-				f"  #{idx}: score={match.score:.3f}, top-left={match.top_left}, bottom-right={match.bottom_right}"
-			)
-		if result.annotated_image:
-			print(f"Annotated detections saved to: {result.annotated_image}")
-	else:
-		print("No matches exceeded the provided threshold.")
+    # CLI usage: optionally accept arguments: scene_path [template_image|template_folder]
+    # If none provided, fall back to interactive prompts (previous behaviour).
+    # If the 2nd argument is a directory, all files beginning with 'template_' inside
+    # that folder will be tried as templates.
+    # Example:
+    #   python module2_part1.py scene.jpg templates_folder/
+    #   python module2_part1.py scene.jpg template_object.jpg
 
+    # Prompt for both scene and template paths (user must enter them each time)
+    print("Template-matching detection (correlation-based)")
+    print()
+    print("Provide the full path (or relative to the repo root) for both:")
+    print(" - the scene image that contains the object to search for")
+    print(" - the template image containing the object to match")
+    print()
+
+    # Require the user to enter both paths explicitly (no defaults).
+    def prompt_for_path(prompt_text: str) -> str:
+        while True:
+            p = input(prompt_text).strip()
+            if p and os.path.isfile(p):
+                return p
+            print("Path missing or file does not exist. Please enter a valid file path.")
+
+    # Check for optional command line args
+    import sys
+
+    threshold = 0.8
+
+    if len(sys.argv) >= 3:
+        # Called as: python module2_part1.py <scene> <template_or_folder>
+        scene_path = sys.argv[1]
+        tpl_arg = sys.argv[2]
+
+        if not os.path.isfile(scene_path):
+            print(f"Scene file not found: {scene_path}")
+            return
+
+        # If the second arg is a directory: scan for files starting with 'template_'
+        if os.path.isdir(tpl_arg):
+            found_any = False
+            matches_overall = False
+            template_files = sorted(
+                [os.path.join(tpl_arg, f) for f in os.listdir(tpl_arg) if f.startswith("template_")]
+            )
+            if not template_files:
+                print(f"No template files found in folder '{tpl_arg}' (looking for files starting with 'template_').")
+                return
+
+            print(f"Found {len(template_files)} template file(s) in folder '{tpl_arg}'. Running matches...")
+            for tfile in template_files:
+                try:
+                    matched = match_template(scene_path, tfile, threshold=threshold, save_result=True)
+                    found_any = True
+                    if matched:
+                        matches_overall = True
+                        print(f"Template {tfile} matched in scene.")
+                    else:
+                        print(f"Template {tfile} did NOT match.")
+                except Exception as e:
+                    print(f"Skipping template {tfile} — error: {e}")
+
+            if not found_any:
+                print("No candidate templates were processed.")
+            elif matches_overall:
+                print("At least one template matched in the scene.")
+            else:
+                print("No templates matched the scene.")
+        else:
+            # Treat as a single template image
+            if not os.path.isfile(tpl_arg):
+                print(f"Template not found: {tpl_arg}")
+                return
+
+            print("Doing the matching... please wait")
+            try:
+                matched = match_template(scene_path, tpl_arg, threshold=threshold, save_result=True)
+                if matched:
+                    print("Object detected in the scene.")
+                else:
+                    print("Object NOT detected in the scene.")
+            except Exception as e:
+                print(f"Error: {e}")
+
+    else:
+        # No CLI args: keep previous interactive behaviour
+        def prompt_for_path(prompt_text: str) -> str:
+            while True:
+                p = input(prompt_text).strip()
+                if p and os.path.isfile(p):
+                    return p
+                print("Path missing or file does not exist. Please enter a valid file path.")
+
+        scene_path = prompt_for_path("Scene file path: ")
+        template_path = prompt_for_path("Template file path: ")
+        print("Doing the matching... please wait")
+
+        try:
+            matched = match_template(scene_path, template_path, threshold=threshold, save_result=True)
+            if matched:
+                print("Object detected in the scene.")
+            else:
+                print("Object NOT detected in the scene.")
+        except Exception as e:
+            print(f"Error: {e}")
 
 
 if __name__ == "__main__":
-	main()
+    main()
 

@@ -203,3 +203,455 @@ async function runModule(id) {
         updateIcon(nextTheme);
     });
 })();
+
+document.addEventListener('DOMContentLoaded', initModule1Flow);
+
+function initModule1Flow() {
+    const refCanvas = document.getElementById('ref-canvas');
+    const testCanvas = document.getElementById('test-canvas');
+    if (!refCanvas || !testCanvas) return;
+
+    const ctxRef = refCanvas.getContext('2d');
+    const ctxTest = testCanvas.getContext('2d');
+
+    const elements = {
+        ref: {
+            canvas: refCanvas,
+            ctx: ctxRef,
+            wrapper: document.querySelector('#module1-ref-card .canvas-wrapper'),
+            empty: document.getElementById('ref-canvas-empty'),
+            fileInput: document.getElementById('ref-image-input'),
+            clearBtn: document.getElementById('ref-clear-btn'),
+            resetBtn: document.getElementById('ref-reset-points'),
+            pixelLabel: document.getElementById('ref-pixel-width'),
+            realWidthInput: document.getElementById('ref-real-width'),
+            distanceInput: document.getElementById('ref-distance'),
+            calcBtn: document.getElementById('ref-calc-btn'),
+            status: document.getElementById('ref-status'),
+            card: document.getElementById('module1-ref-card')
+        },
+        test: {
+            canvas: testCanvas,
+            ctx: ctxTest,
+            wrapper: document.querySelector('#module1-test-card .canvas-wrapper'),
+            empty: document.getElementById('test-canvas-empty'),
+            fileInput: document.getElementById('test-image-input'),
+            clearBtn: document.getElementById('test-clear-btn'),
+            resetBtn: document.getElementById('test-reset-points'),
+            pixelLabel: document.getElementById('test-pixel-width'),
+            distanceInput: document.getElementById('test-distance'),
+            calcBtn: document.getElementById('test-calc-btn'),
+            status: document.getElementById('test-status'),
+            card: document.getElementById('module1-test-card')
+        },
+        summary: {
+            focal: document.getElementById('summary-focal'),
+            refPx: document.getElementById('summary-ref-px'),
+            refDist: document.getElementById('summary-ref-dist'),
+            testDist: document.getElementById('summary-test-dist'),
+            testPx: document.getElementById('summary-test-px'),
+            realWidth: document.getElementById('summary-real-width'),
+            banner: document.getElementById('module1-result-banner'),
+            reset: document.getElementById('module1-reset')
+        }
+    };
+
+    const MAX_HEIGHT = 800;
+    const MAX_WIDTH = 900;
+
+    const state = {
+        focalLength: null,
+        reference: {
+            image: null,
+            meta: null,
+            points: [],
+            pixelWidth: null,
+            realWidth: null,
+            distance: null
+        },
+        test: {
+            image: null,
+            meta: null,
+            points: [],
+            pixelWidth: null,
+            distance: null,
+            realWidth: null
+        }
+    };
+
+    const numberFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    elements.ref.fileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        loadImage('reference', file);
+    });
+
+    elements.test.fileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        loadImage('test', file);
+    });
+
+    elements.ref.clearBtn.addEventListener('click', () => resetImage('reference'));
+    elements.test.clearBtn.addEventListener('click', () => resetImage('test'));
+
+    elements.ref.resetBtn.addEventListener('click', () => resetPoints('reference'));
+    elements.test.resetBtn.addEventListener('click', () => resetPoints('test'));
+
+    elements.ref.realWidthInput.addEventListener('input', checkRefReady);
+    elements.ref.distanceInput.addEventListener('input', checkRefReady);
+    elements.test.distanceInput.addEventListener('input', checkTestReady);
+
+    elements.ref.calcBtn.addEventListener('click', submitFocalLength);
+    elements.test.calcBtn.addEventListener('click', submitRealWidth);
+    elements.summary.reset.addEventListener('click', resetModule);
+
+    elements.ref.canvas.addEventListener('click', (event) => handleCanvasClick('reference', event));
+    elements.test.canvas.addEventListener('click', (event) => handleCanvasClick('test', event));
+
+    function loadImage(kind, file) {
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            const img = new Image();
+            img.onload = () => {
+                const target = kind === 'reference' ? elements.ref : elements.test;
+                const { displayWidth, displayHeight } = calculateDisplaySize(img);
+
+                const canvas = target.canvas;
+                canvas.width = displayWidth;
+                canvas.height = displayHeight;
+
+                const ctx = target.ctx;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
+
+                const bucket = state[kind === 'reference' ? 'reference' : 'test'];
+                bucket.image = img;
+                bucket.meta = {
+                    displayWidth,
+                    displayHeight,
+                    naturalWidth: img.width,
+                    naturalHeight: img.height
+                };
+                bucket.points = [];
+                bucket.pixelWidth = null;
+
+                target.wrapper.dataset.state = 'ready';
+                target.empty.textContent = 'Click two points to draw the measurement line.';
+                target.clearBtn.disabled = false;
+                target.resetBtn.disabled = true;
+
+                if (kind === 'reference') {
+                    updateStatus('reference', 'Image loaded. Mark the known width.', 'info');
+                } else {
+                    updateStatus('test', 'Image loaded. Mark the test object.', 'info');
+                    elements.test.distanceInput.disabled = false;
+                }
+
+                updatePixelMetric(kind);
+                checkRefReady();
+                checkTestReady();
+            };
+            img.onerror = () => {
+                updateStatus(kind, 'Unable to load that file. Please try a different image.', 'error');
+            };
+            img.src = evt.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function calculateDisplaySize(img) {
+        const widthRatio = MAX_WIDTH / img.width;
+        const heightRatio = MAX_HEIGHT / img.height;
+        const scale = Math.min(1, widthRatio, heightRatio);
+        const displayWidth = Math.round(img.width * scale);
+        const displayHeight = Math.round(img.height * scale);
+        return { displayWidth, displayHeight };
+    }
+
+    function handleCanvasClick(kind, event) {
+        const bucket = state[kind === 'reference' ? 'reference' : 'test'];
+        if (!bucket.image || bucket.points.length === 2) return;
+
+        const elementsGroup = kind === 'reference' ? elements.ref : elements.test;
+        const rect = elementsGroup.canvas.getBoundingClientRect();
+        const clickPoint = {
+            x: event.clientX - rect.left,
+            y: event.clientY - rect.top
+        };
+
+        const meta = bucket.meta;
+        if (!meta || !rect.width || !rect.height) return;
+
+        const scaleX = meta.naturalWidth / rect.width;
+        const scaleY = meta.naturalHeight / rect.height;
+        const displayScaleX = meta.displayWidth / rect.width;
+        const displayScaleY = meta.displayHeight / rect.height;
+
+        const imagePoint = {
+            x: clickPoint.x * scaleX,
+            y: clickPoint.y * scaleY
+        };
+
+        const canvasPoint = {
+            x: clickPoint.x * displayScaleX,
+            y: clickPoint.y * displayScaleY
+        };
+
+        bucket.points.push({ canvas: canvasPoint, image: imagePoint });
+
+        drawCanvas(kind);
+
+        if (bucket.points.length === 2) {
+            const [p1, p2] = bucket.points;
+            bucket.pixelWidth = Math.hypot(p2.image.x - p1.image.x, p2.image.y - p1.image.y);
+            updatePixelMetric(kind);
+            elementsGroup.resetBtn.disabled = false;
+
+            if (kind === 'reference') {
+                updateStatus('reference', 'Select the real width and distance, then calculate the focal length.', 'success');
+            } else {
+                updateStatus('test', 'Enter the camera distance to compute the real-world size.', 'success');
+            }
+        } else {
+            updateStatus(kind, 'Point recorded. Select one more point.', 'info');
+        }
+
+        checkRefReady();
+        checkTestReady();
+    }
+
+    function drawCanvas(kind) {
+        const target = kind === 'reference' ? elements.ref : elements.test;
+        const bucket = state[kind === 'reference' ? 'reference' : 'test'];
+        const ctx = target.ctx;
+        const canvas = target.canvas;
+        if (!bucket.image || !bucket.meta) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bucket.image, 0, 0, bucket.meta.displayWidth, bucket.meta.displayHeight);
+
+        bucket.points.forEach(({ canvas: point }, index) => {
+            ctx.fillStyle = '#ff3b81';
+            ctx.strokeStyle = '#1d1f27';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(point.x, point.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+
+            ctx.fillStyle = '#101217';
+            ctx.font = '12px Inter, sans-serif';
+            ctx.fillText(index === 0 ? 'A' : 'B', point.x + 8, point.y - 8);
+        });
+
+        if (bucket.points.length === 2) {
+            ctx.strokeStyle = '#31c48d';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(bucket.points[0].canvas.x, bucket.points[0].canvas.y);
+            ctx.lineTo(bucket.points[1].canvas.x, bucket.points[1].canvas.y);
+            ctx.stroke();
+        }
+    }
+
+    function resetPoints(kind) {
+        const bucket = state[kind === 'reference' ? 'reference' : 'test'];
+        const target = kind === 'reference' ? elements.ref : elements.test;
+        bucket.points = [];
+        bucket.pixelWidth = null;
+        drawCanvas(kind);
+        target.pixelLabel.textContent = '--';
+        target.resetBtn.disabled = true;
+
+        if (kind === 'reference') {
+            updateStatus('reference', 'Click two new points to measure the reference width.', 'info');
+        } else {
+            updateStatus('test', 'Click two new points to measure the test object.', 'info');
+        }
+
+        checkRefReady();
+        checkTestReady();
+    }
+
+    function resetImage(kind) {
+        const bucket = state[kind === 'reference' ? 'reference' : 'test'];
+        const target = kind === 'reference' ? elements.ref : elements.test;
+        bucket.image = null;
+        bucket.meta = null;
+        resetPoints(kind);
+        target.canvas.width = target.canvas.height = 0;
+        target.wrapper.dataset.state = 'empty';
+        target.empty.textContent = 'Upload an image to begin';
+        target.fileInput.value = '';
+        target.clearBtn.disabled = true;
+        if (kind === 'test') {
+            elements.test.distanceInput.value = '';
+            elements.test.distanceInput.disabled = true;
+        }
+
+        checkRefReady();
+        checkTestReady();
+    }
+
+    function updatePixelMetric(kind) {
+        const target = kind === 'reference' ? elements.ref : elements.test;
+        const bucket = state[kind === 'reference' ? 'reference' : 'test'];
+        target.pixelLabel.textContent = bucket.pixelWidth ? numberFormat.format(bucket.pixelWidth) + ' px' : '--';
+    }
+
+    function checkRefReady() {
+        const hasImage = Boolean(state.reference.image);
+        const hasPoints = typeof state.reference.pixelWidth === 'number';
+        const realWidth = parseFloat(elements.ref.realWidthInput.value);
+        const distance = parseFloat(elements.ref.distanceInput.value);
+        const numericReady = realWidth > 0 && distance > 0;
+        const enable = hasImage && hasPoints && numericReady;
+        elements.ref.calcBtn.disabled = !enable;
+        return enable;
+    }
+
+    function checkTestReady() {
+        const unlocked = Boolean(state.focalLength);
+        const hasImage = Boolean(state.test.image);
+        const hasPoints = typeof state.test.pixelWidth === 'number';
+        const distance = parseFloat(elements.test.distanceInput.value);
+        const enable = unlocked && hasImage && hasPoints && distance > 0;
+        elements.test.calcBtn.disabled = !enable;
+        elements.test.resetBtn.disabled = !hasImage || state.test.points.length === 0;
+        return enable;
+    }
+
+    async function submitFocalLength() {
+        if (!checkRefReady()) return;
+        toggleLoading(elements.ref.calcBtn, true, 'Calculating...');
+        updateStatus('reference', 'Calculating focal length...', 'info');
+
+        const payload = {
+            pixelWidth: state.reference.pixelWidth,
+            realWidth: parseFloat(elements.ref.realWidthInput.value),
+            distance: parseFloat(elements.ref.distanceInput.value)
+        };
+
+        try {
+            const res = await fetch('/api/a1/focal-length', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Unable to compute focal length.');
+
+            state.focalLength = data.focalLength;
+            state.reference.pixelWidth = data.refPixelWidth;
+            state.reference.realWidth = data.refRealWidth;
+            state.reference.distance = data.refDistance;
+
+            updateStatus('reference', `Focal length stored: ${numberFormat.format(state.focalLength)} px`, 'success');
+            unlockTestStep();
+            updateSummary();
+        } catch (err) {
+            updateStatus('reference', err.message, 'error');
+        } finally {
+            toggleLoading(elements.ref.calcBtn, false);
+            checkRefReady();
+        }
+    }
+
+    async function submitRealWidth() {
+        if (!checkTestReady()) return;
+        toggleLoading(elements.test.calcBtn, true, 'Calculating...');
+        updateStatus('test', 'Calculating real-world width...', 'info');
+
+        const payload = {
+            pixelWidth: state.test.pixelWidth,
+            distance: parseFloat(elements.test.distanceInput.value),
+            focalLength: state.focalLength
+        };
+
+        try {
+            const res = await fetch('/api/a1/real-width', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Unable to compute real width.');
+
+            state.test.pixelWidth = data.testPixelWidth;
+            state.test.distance = data.testDistance;
+            state.test.realWidth = data.realWidth;
+
+            updateStatus('test', 'Measurement complete!', 'success');
+            updateSummary();
+            elements.summary.banner.textContent = `Calculated width: ${numberFormat.format(state.test.realWidth)} cm`;
+            elements.summary.banner.classList.add('ready');
+        } catch (err) {
+            updateStatus('test', err.message, 'error');
+        } finally {
+            toggleLoading(elements.test.calcBtn, false);
+            checkTestReady();
+        }
+    }
+
+    function unlockTestStep() {
+        elements.test.card.classList.remove('locked');
+        elements.test.card.removeAttribute('aria-disabled');
+        elements.test.fileInput.disabled = false;
+        elements.test.clearBtn.disabled = false;
+        elements.test.distanceInput.disabled = false;
+        updateStatus('test', 'Upload a test image captured by the same camera.', 'info');
+    }
+
+    function resetModule() {
+        resetImage('reference');
+        resetImage('test');
+        elements.ref.realWidthInput.value = '';
+        elements.ref.distanceInput.value = '';
+        elements.test.distanceInput.value = '';
+        elements.test.fileInput.disabled = true;
+        elements.test.clearBtn.disabled = true;
+        elements.test.card.classList.add('locked');
+        elements.test.card.setAttribute('aria-disabled', 'true');
+        state.reference.realWidth = null;
+        state.reference.distance = null;
+        state.test.realWidth = null;
+        state.test.distance = null;
+        state.focalLength = null;
+        elements.summary.banner.textContent = 'Run the steps to see the measurement summary.';
+        elements.summary.banner.classList.remove('ready');
+        updateStatus('reference', 'Upload a reference image to begin calibration.', 'info');
+        updateStatus('test', 'Complete Step 1 to unlock measurement.', 'info');
+        updateSummary();
+    }
+
+    function updateSummary() {
+        elements.summary.focal.textContent = state.focalLength ? numberFormat.format(state.focalLength) : '--';
+        elements.summary.refPx.textContent = state.reference.pixelWidth ? numberFormat.format(state.reference.pixelWidth) : '--';
+        elements.summary.refDist.textContent = state.reference.distance ? numberFormat.format(state.reference.distance) : '--';
+        elements.summary.testDist.textContent = state.test.distance ? numberFormat.format(state.test.distance) : '--';
+        elements.summary.testPx.textContent = state.test.pixelWidth ? numberFormat.format(state.test.pixelWidth) : '--';
+        elements.summary.realWidth.textContent = state.test.realWidth ? numberFormat.format(state.test.realWidth) : '--';
+    }
+
+    function toggleLoading(button, isLoading, label = 'Processing...') {
+        if (isLoading) {
+            button.dataset.originalLabel = button.textContent;
+            button.textContent = label;
+            button.disabled = true;
+        } else {
+            const original = button.dataset.originalLabel || label;
+            button.textContent = original;
+            button.disabled = false;
+        }
+    }
+
+    function updateStatus(kind, message, variant) {
+        const target = kind === 'reference' ? elements.ref.status : elements.test.status;
+        target.textContent = message;
+        target.dataset.variant = variant;
+    }
+
+    resetModule();
+}

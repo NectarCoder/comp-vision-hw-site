@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, jsonify, send_from_directory
 from flask_cors import CORS
-import time
+from hwsources.module1 import calculate_focal_length, calculate_real_dimension
 
 # Serve static assets from the templates folder so they can be moved
 # from /static into /templates while keeping the same "url_for('static', ...)"
@@ -24,23 +24,59 @@ def favicon():
     """
     return send_from_directory(app.static_folder, 'favicon.ico')
 
-# --- Module Stubs ---
-# These are the endpoints your Javascript will call.
-# You will eventually import your actual homework scripts here.
 
-@app.route('/api/a1', methods=['POST'])
-def handle_a1():
-    data = request.json
-    user_input = data.get('input', '')
-    
-    # TODO: Connect your actual Module 1 Python code here
-    # Example: result = module1.run(user_input)
-    
-    # Simulating processing time
-    time.sleep(0.5) 
-    
-    response = f"[Stub] Module 1 processed: '{user_input}'\n(Replace this logic in app.py with your real CV code)"
-    return jsonify({'result': response})
+def _parse_numeric(data, key, allow_zero=False):
+    """Try to coerce JSON field `key` into float, raising ValueError on failure."""
+    if key not in data:
+        raise ValueError(f"Missing field: {key}")
+    try:
+        value = float(data[key])
+    except (TypeError, ValueError):
+        raise ValueError(f"{key} must be numeric")
+
+    if not allow_zero and value == 0:
+        raise ValueError(f"{key} must be non-zero")
+    if value < 0:
+        raise ValueError(f"{key} must be positive")
+    return value
+
+
+@app.route('/api/a1/focal-length', methods=['POST'])
+def module1_calculate_focal_length():
+    data = request.get_json(silent=True) or {}
+    try:
+        pixel_width = _parse_numeric(data, 'pixelWidth')
+        real_width = _parse_numeric(data, 'realWidth')
+        distance = _parse_numeric(data, 'distance')
+        focal_length = calculate_focal_length(pixel_width, real_width, distance)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    return jsonify({
+        'focalLength': focal_length,
+        'refPixelWidth': pixel_width,
+        'refRealWidth': real_width,
+        'refDistance': distance
+    })
+
+
+@app.route('/api/a1/real-width', methods=['POST'])
+def module1_calculate_real_width():
+    data = request.get_json(silent=True) or {}
+    try:
+        pixel_width = _parse_numeric(data, 'pixelWidth')
+        focal_length = _parse_numeric(data, 'focalLength')
+        distance = _parse_numeric(data, 'distance')
+        real_width = calculate_real_dimension(pixel_width, focal_length, distance)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    return jsonify({
+        'realWidth': real_width,
+        'testPixelWidth': pixel_width,
+        'testDistance': distance,
+        'focalLength': focal_length
+    })
 
 @app.route('/api/a2', methods=['POST'])
 def handle_a2():

@@ -1,34 +1,26 @@
 """
-CSC 8830 Assignment 4 - Problem 1: Image Stitching
-Author: [Your Name]
+CSC 8830 Computer Vision
+Dr. Ashwin Ashok
+Avyuktkrishna Ramasamy
+Module 4 Assignment Part 1 - Image Stitching
 
-Description:
-    This script implements image stitching to create a panorama from a set of 
-    overlapping images. It performs the following steps:
-    1. Detects keypoints and descriptors (using SIFT).
-    2. Matches features between adjacent images.
-    3. Computes the Homography matrix using RANSAC.
-    4. Warps one image to align with the other and blends them.
-    
-    It is designed to stitch a sequence of images (e.g., 'img1.jpg', 'img2.jpg'...)
-    taken in a horizontal sweep.
+The purpose of the script is to create a panorama by stitching 
+together several overlapping landscape orientation images. It 
+should be comparable to the panorama mode on a smartphone. 
 
 Usage:
-    1. Place your 4+ images in a folder.
-    2. Run: python assignment4_stitching.py
-    3. Provide the folder path when prompted.
+    1. First make sure that the landscape images (at least 4) are in a folder
+    2. Run the script - python module4_part1.py
+    3. When prompted enter the path to the folder - path/to/folder/
 """
 
 import cv2
 import numpy as np
 import glob
 import os
-import sys
 
 def detect_and_describe(image):
-    """
-    Helper: Detects keypoints and computes descriptors using SIFT.
-    """
+    """Detects keypoints and computes descriptors using SIFT."""
     gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     sift = cv2.SIFT_create()
     kps, features = sift.detectAndCompute(gray, None)
@@ -36,120 +28,117 @@ def detect_and_describe(image):
 
 def match_keypoints(kpsA, kpsB, featuresA, featuresB, ratio=0.75, reproj_thresh=4.0):
     """
-    Matches features between two images and computes Homography.
+    Matches features between two sets of keypoints and computes the Homography.
     """
-    # BruteForce Matcher
     matcher = cv2.BFMatcher()
     raw_matches = matcher.knnMatch(featuresA, featuresB, k=2)
     
     matches = []
-    # Lowe's ratio test
+    # Lowe's ratio test to filter for good matches
     for m, n in raw_matches:
         if m.distance < ratio * n.distance:
             matches.append(m)
 
-    # Need at least 4 matches to compute homography
+    # Homography calculation requires at least 4 matches
     if len(matches) > 4:
-        # Construct the two sets of points
         ptsA = np.float32([kpsA[m.queryIdx].pt for m in matches])
         ptsB = np.float32([kpsB[m.trainIdx].pt for m in matches])
         
-        # Compute Homography (H) that maps ptsA to ptsB
-        # RANSAC is used here to be robust against outliers
+        # Compute the homography matrix using RANSAC
         (H, status) = cv2.findHomography(ptsA, ptsB, cv2.RANSAC, reproj_thresh)
         
         return (matches, H, status)
     
     return None
 
-def stitch_pair(imgA, imgB):
+def stitch(left_img, right_img):
     """
-    Stitches two images together. 
-    imgA: The image to be warped (right)
-    imgB: The base image (left)
+    Stitches the right image to the left image.
     """
-    kpsA, featsA = detect_and_describe(imgA)
-    kpsB, featsB = detect_and_describe(imgB)
+    # Find keypoints and descriptors for both images
+    kps_left, feats_left = detect_and_describe(left_img)
+    kps_right, feats_right = detect_and_describe(right_img)
     
-    result = match_keypoints(kpsA, kpsB, featsA, featsB)
+    # Match features and compute homography to map right_img to left_img
+    result = match_keypoints(kps_right, kps_left, feats_right, feats_left)
     
     if result is None:
-        print("[WARNING] Not enough matches found between pair.")
-        return imgB
+        print("[WARNING] Not enough matches found. Skipping pair.")
+        return left_img
         
     (matches, H, status) = result
     
-    # Get dimensions
-    hA, wA = imgA.shape[:2]
-    hB, wB = imgB.shape[:2]
+    # Get dimensions of both images
+    h_left, w_left = left_img.shape[:2]
+    h_right, w_right = right_img.shape[:2]
     
-    # Warp imgA to imgB's coordinate space
-    # The size of the new canvas needs to be large enough
-    # For a simple horizontal stitch, we add widths
-    panorama = cv2.warpPerspective(imgA, H, (wA + wB, hA))
+    # Create a new canvas to hold the stitched result
+    # The canvas is wide enough to hold both images side-by-side
+    panorama = np.zeros((max(h_left, h_right), w_left + w_right, 3), dtype="uint8")
     
-    # Place imgB on the panorama
-    panorama[0:hB, 0:wB] = imgB
+    # Place the left image on the canvas
+    panorama[0:h_left, 0:w_left] = left_img
     
-    # Optional: Simple blending could be added here to remove seam lines
-    # For this assignment, direct overlay is usually sufficient to demonstrate logic
+    # Warp the right image onto the canvas, using the calculated homography.
+    # The BORDER_TRANSPARENT flag ensures that the warped image overwrites the
+    # existing canvas pixels only where the source image has content.
+    cv2.warpPerspective(right_img, H, (panorama.shape[1], panorama.shape[0]), 
+                        dst=panorama, borderMode=cv2.BORDER_TRANSPARENT)
     
-    # Crop black regions (simple approach)
-    # Find all non-black points
-    gray = cv2.cvtColor(panorama, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
-    contours, _ = cv2.findContours(thresh, cv2.CV_RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if contours:
-        x, y, w, h = cv2.boundingRect(contours[0])
-        panorama = panorama[y:y+h, x:x+w]
-        
     return panorama
 
+def crop_panorama(panorama):
+    """Crops the black border from the stitched panorama."""
+    gray = cv2.cvtColor(panorama, cv2.COLOR_BGR2GRAY)
+    
+    # Find all non-black pixels
+    coords = cv2.findNonZero(gray)
+    if coords is None:
+        # Return original image if it's all black
+        return panorama
+
+    # Get the bounding box for all non-black pixels
+    x, y, w, h = cv2.boundingRect(coords)
+    return panorama[y:y+h, x:x+w]
+
 def main():
-    print("=== Assignment 4: Image Stitching ===")
+    print("=== Assignment 4: High-Quality Image Stitching ===")
     
     img_dir = input("Enter path to image folder: ").strip()
-    if not os.path.exists(img_dir):
-        print("Directory not found.")
+    if not os.path.isdir(img_dir):
+        print(f"Directory not found: {img_dir}")
         return
 
-    # Load images
-    # Assuming images are named sequentially or ordered alphabetically
+    # Load images, assuming they are named in alphabetical, left-to-right order
+    print("Loading images...")
     image_paths = sorted(glob.glob(os.path.join(img_dir, "*")))
-    images = []
-    
-    for path in image_paths:
-        # Basic check for image extensions
-        if path.lower().endswith(('.png', '.jpg', '.jpeg')):
-            img = cv2.imread(path)
-            if img is not None:
-                # Resize to speed up processing if images are huge
-                img = cv2.resize(img, (0,0), fx=0.5, fy=0.5) 
-                images.append(img)
+    images = [cv2.imread(p) for p in image_paths if p.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    images = [img for img in images if img is not None]
     
     if len(images) < 2:
-        print("Need at least 2 images to stitch.")
+        print("Error: Need at least 2 images to stitch.")
         return
 
-    print(f"Loaded {len(images)} images. Stitching...")
+    print(f"Loaded {len(images)} images. Starting stitching process...")
     
-    # Incremental stitching: stitch 1 and 2, result with 3, etc.
-    # Note: Order matters! This assumes left-to-right sequence.
-    # If warping looks wrong, try reversing the list: images = images[::-1]
-    
+    # Incrementally stitch images from left to right
     panorama = images[0]
-    
     for i in range(1, len(images)):
         print(f"Stitching image {i+1}/{len(images)}...")
-        # Stitch current panorama with next image
-        # We treat 'panorama' as the 'right' image being warped in this simplistic loop 
-        # or vice versa depending on match direction. 
-        # Standard approach: Align Img2 to Img1.
-        panorama = stitch_pair(images[i], panorama)
+        panorama = stitch(panorama, images[i])
 
-    print("Stitching Complete.")
-    cv2.imshow("Resulting Panorama", panorama)
+    print("Stitching complete. Cropping final panorama...")
+    
+    # Crop the final result to remove black borders
+    panorama = crop_panorama(panorama)
+    
+    print("Process finished. Displaying result.")
+    
+    # Save and show the final result
     cv2.imwrite("stitched_result.jpg", panorama)
+    cv2.imshow("Resulting Panorama", panorama)
+    
+    print("Press any key to close the window.")
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 

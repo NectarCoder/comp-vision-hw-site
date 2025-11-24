@@ -1,28 +1,3 @@
-"""
-CSC 8830 Computer Vision
-Dr. Ashwin Ashok
-Avyuktkrishna Ramasamy
-Module 2 Assignment Part 1 - Object Detection with Template Matching
-
-The purpose of this script is to detect an object using 
-template matching based on correlation score. The program 
-will find one or more instances of the template object 
-within a scene(s) images. 
-
-For this part of the Module 2, I have used OpenCV's cross 
-correlation for comparing the template with the scene. 
-Given a threshold value, any calculated correlation score 
-above this value will be considered a match. Once a match 
-has been found, a box surrounding the identified object in 
-the scene will be displayed to the user and saved
-
-Usage:
-    1. Run the script - python module2_part1.py
-    2. Provide the file path for the scene image with the object to be detected
-	3. Provide the file path for the template image specifying the object
-    4. Using threshold 0.8
-"""
-
 from __future__ import annotations
 
 import os
@@ -31,14 +6,10 @@ from typing import List, Tuple
 import cv2
 import numpy as np
 
+# cv2 and numpy let us open images and do the math for matching
 
 def non_max_suppression(boxes: List[Tuple[int, int, int, int]], scores: List[float], iou_thresh: float = 0.4):
-    """Simple non-max suppression for axis-aligned boxes.
-
-    boxes - list of (x1, y1, x2, y2)
-    scores - matching score for each box
-    Returns: indices of boxes to keep
-    """
+    # return an empty list when nothing to suppress
     if not boxes:
         return []
 
@@ -54,6 +25,7 @@ def non_max_suppression(boxes: List[Tuple[int, int, int, int]], scores: List[flo
     order = scores_arr.argsort()[::-1]
 
     keep = []
+    # keep the highest score in each group and skip overlapping ones
     while order.size > 0:
         i = order[0]
         keep.append(int(i))
@@ -83,16 +55,12 @@ def match_template(
     *,
     draw_all: bool = True,
 ) -> bool:
-    """Run normalized cross-correlation template matching.
-
-    Returns True if at least one match >= threshold exists, otherwise False.
-    Saves an annotated image if save_result=True.
-    """
     if not os.path.isfile(scene_path):
         raise FileNotFoundError(f"Scene file not found: {scene_path}")
     if not os.path.isfile(template_path):
         raise FileNotFoundError(f"Template file not found: {template_path}")
 
+    # load the images now that paths are validated
     scene = cv2.imread(scene_path)
     template = cv2.imread(template_path)
     if scene is None:
@@ -102,65 +70,62 @@ def match_template(
 
     scene_gray = cv2.cvtColor(scene, cv2.COLOR_BGR2GRAY)
     template_gray = cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+    # convert to gray so we only compare brightness data
 
     th, tw = template_gray.shape[:2]
     sh, sw = scene_gray.shape[:2]
     if th > sh or tw > sw:
         raise ValueError("Template is larger than scene — matching won't work.")
 
-    # Use normalized cross-correlation
     res = cv2.matchTemplate(scene_gray, template_gray, cv2.TM_CCORR_NORMED)
+    # res tells us how strong the template match is at each spot
 
-    # Locate all positions where value >= threshold
-    # Get all locations where the response >= threshold
     y_idxs, x_idxs = np.where(res >= threshold)
+    # keep every location that passed the threshold so far
 
-    # If the image is large / threshold low this set may be huge; to keep
-    # processing robust we only keep the top-K candidate positions by score.
     boxes = []
     scores = []
     for (y, x) in zip(y_idxs, x_idxs):
         boxes.append((int(x), int(y), int(x + tw), int(y + th)))
         scores.append(float(res[y, x]))
 
-    # Keep only the top candidates (pre-NMS) to avoid extreme slowdowns
+    # keep the strongest few matches so we stay quick
     max_candidates = 50
     if len(scores) > max_candidates:
         order = np.argsort(scores)[::-1][:max_candidates]
         boxes = [boxes[i] for i in order]
         scores = [scores[i] for i in order]
 
+    # remember if we found any candidates before suppressing overlaps
     found = len(boxes) > 0
 
-    # If there are many overlapping boxes, cluster them via NMS
     if found:
+        # drop overlapping detections so we only draw one per object
         keep_idxs = non_max_suppression(boxes, scores, iou_thresh=0.35)
         kept_boxes = [boxes[i] for i in keep_idxs]
         kept_scores = [scores[i] for i in keep_idxs]
 
-        # Decide whether to draw all kept boxes or only the highest-confidence one
+        # draw rectangles on a copy so we never mutate the raw scene image
         out = scene.copy()
         if not draw_all:
-            # keep only the single highest-score detection (this forces the matcher
-            # to scan the full response map and still return the most confident match)
             best_idx = int(np.argmax(kept_scores))
             kept_boxes = [kept_boxes[best_idx]]
             kept_scores = [kept_scores[best_idx]]
 
-        # Find the highest-confidence kept detection (if any) so we can highlight it
+        # remember which kept box has the highest score for the highlight
         best_idx = 0
         if kept_scores:
             best_idx = int(np.argmax(kept_scores))
 
-        # Draw all detections first (green). Then draw the best one with a thicker red box
+        # draw every kept box with its score so user sees candidates
         for i, (box, score) in enumerate(zip(kept_boxes, kept_scores)):
             x1, y1, x2, y2 = box
             cv2.rectangle(out, (x1, y1), (x2, y2), (0, 200, 0), 2)
             text = f"{score:.2f}"
             cv2.putText(out, text, (x1, max(10, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
 
-        # Highlight the single best detection in red with a thicker line and label
         if kept_boxes:
+            # emphasize the single best match for quick pruning
             bx = kept_boxes[best_idx]
             bscore = kept_scores[best_idx]
             x1, y1, x2, y2 = bx
@@ -170,14 +135,11 @@ def match_template(
 
         if save_result:
             base, ext = os.path.splitext(scene_path)
-            # Use template file name to avoid overwriting results when multiple
-            # templates are matched against the same scene image.
             tpl_name = os.path.splitext(os.path.basename(template_path))[0]
             out_path = f"{base}_matched_{tpl_name}{ext}"
             cv2.imwrite(out_path, out)
             print(f"Result saved to: {out_path}")
 
-        # Explain what we found
         if draw_all:
             print(f"Detected {len(kept_boxes)} match(es) (threshold={threshold}).")
         else:
@@ -189,23 +151,15 @@ def match_template(
 
 
 def main() -> None:
-    # CLI usage: optionally accept arguments: scene_path [template_image|template_folder]
-    # If none provided, fall back to interactive prompts (previous behaviour).
-    # If the 2nd argument is a directory, all files beginning with 'template_' inside
-    # that folder will be tried as templates.
-    # Example:
-    #   python module2_part1.py scene.jpg templates_folder/
-    #   python module2_part1.py scene.jpg template_object.jpg
-
-    # Prompt for both scene and template paths (user must enter them each time)
     print("Template-matching detection (correlation-based)")
     print()
     print("Provide the full path (or relative to the repo root) for both:")
     print(" - the scene image that contains the object to search for")
     print(" - the template image containing the object to match")
     print()
+    # remind the user that both file paths are needed
 
-    # Require the user to enter both paths explicitly (no defaults).
+    # helper so we can reuse the same prompt logic twice
     def prompt_for_path(prompt_text: str) -> str:
         while True:
             p = input(prompt_text).strip()
@@ -213,13 +167,13 @@ def main() -> None:
                 return p
             print("Path missing or file does not exist. Please enter a valid file path.")
 
-    # Check for optional command line args
+    # allow the script to read CLI arguments if provided
     import sys
 
-    threshold = 0.8
+    threshold = 0.7
 
+    # allow optional scene + template arguments for scripting
     if len(sys.argv) >= 3:
-        # Called as: python module2_part1.py <scene> <template_or_folder>
         scene_path = sys.argv[1]
         tpl_arg = sys.argv[2]
 
@@ -227,7 +181,6 @@ def main() -> None:
             print(f"Scene file not found: {scene_path}")
             return
 
-        # If the second arg is a directory: scan for files starting with 'template_'
         if os.path.isdir(tpl_arg):
             found_any = False
             matches_overall = False
@@ -241,6 +194,7 @@ def main() -> None:
             print(f"Found {len(template_files)} template file(s) in folder '{tpl_arg}'. Running matches...")
             for tfile in template_files:
                 try:
+                    # try each template and remember if any matched
                     matched = match_template(scene_path, tfile, threshold=threshold, save_result=True)
                     found_any = True
                     if matched:
@@ -258,7 +212,6 @@ def main() -> None:
             else:
                 print("No templates matched the scene.")
         else:
-            # Treat as a single template image
             if not os.path.isfile(tpl_arg):
                 print(f"Template not found: {tpl_arg}")
                 return
@@ -274,7 +227,7 @@ def main() -> None:
                 print(f"Error: {e}")
 
     else:
-        # No CLI args: keep previous interactive behaviour
+        # fallback to asking the user once we have no CLI values
         def prompt_for_path(prompt_text: str) -> str:
             while True:
                 p = input(prompt_text).strip()
@@ -287,6 +240,7 @@ def main() -> None:
         print("Doing the matching... please wait")
 
         try:
+            # run the matcher and report success or failure
             matched = match_template(scene_path, template_path, threshold=threshold, save_result=True)
             if matched:
                 print("Object detected in the scene.")

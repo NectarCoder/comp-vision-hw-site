@@ -251,11 +251,67 @@
         <div id="a2" class="tab-content">
             <h2>Module 2 Assignment</h2>
             <p class="description">Object Detection with Correlation-Based Template Matching</p>
-            <div class="module-container">
-                <textarea id="input-a2" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runModule('a2')">Run Module 2</button>
-                <div id="output-a2" class="output-box">// Output will appear here...</div>
-            </div>
+
+            <section class="module2-card" id="module2-part1" aria-labelledby="module2-part1-title">
+                <header class="module2-card__header">
+                    <div>
+                        <h3 id="module2-part1-title">Part 1 – Template Matching</h3>
+                        <p>Part 1 is still being adapted for the web interface. The CLI source remains available below for reference.</p>
+                    </div>
+                </header>
+                <div class="module2-card__body">
+                    <p class="hint">Interactive controls for Part 1 will appear once the matching program is ported. For now, explore the CLI code via the source viewer.</p>
+                </div>
+            </section>
+
+            <section class="module2-card" id="module2-part2" aria-labelledby="module2-part2-title">
+                <header class="module2-card__header">
+                    <div>
+                        <h3 id="module2-part2-title">Part 2 - Gaussian Blur &amp; Fourier Inverse Filtering</h3>
+                        <p>Upload an image that blurs the frame and restores it via inverse filtering.</p>
+                    </div>
+                </header>
+                <div class="module2-card__body module2-grid">
+                    <form id="module2-part2-form" aria-label="Module 2 Part 2 form" enctype="multipart/form-data">
+                        <div class="field">
+                            <label class="file-input">
+                                <input type="file" id="module2-image-input" accept="image/*" required>
+                                <span>Select an input image</span>
+                            </label>
+                        </div>
+                        <p class="hint">Supported formats: JPG, PNG, BMP, TIFF. The server reuses the CLI logic that auto scales the blur kernel (~3% of the shorter image side) and sigma.</p>
+                        <div class="module2-actions">
+                            <button type="submit" class="primary-btn" id="module2-run-btn" disabled>Run process</button>
+                            <button type="button" class="subtle-btn" id="module2-reset-btn" disabled>Reset</button>
+                        </div>
+                        <div class="status-line" id="module2-part2-status" data-variant="info">Choose an image to get started.</div>
+                    </form>
+                    <div class="module2-results" aria-live="polite">
+                        <div class="result-frame">
+                            <h4>Original Input</h4>
+                            <div class="result-image" data-empty="true">
+                                <img id="module2-original-preview" alt="Original input preview" hidden>
+                                <p id="module2-original-placeholder">No image selected.</p>
+                            </div>
+                        </div>
+                        <div class="result-frame">
+                            <h4>Blurred Output</h4>
+                            <div class="result-image" data-empty="true">
+                                <img id="module2-blurred-preview" alt="Blurred output preview" hidden>
+                                <p id="module2-blurred-placeholder">No output yet.</p>
+                            </div>
+                        </div>
+                        <div class="result-frame">
+                            <h4>Inverse Filtered Output</h4>
+                            <div class="result-image" data-empty="true">
+                                <img id="module2-restored-preview" alt="Restored output preview" hidden>
+                                <p id="module2-restored-placeholder">No output yet.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
             <!-- Watch the video (collapsed by default) -->
             <section class="video-section" aria-labelledby="video-toggle-a2">
                 <button id="video-toggle-a2" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a2">Watch the video ▾</button>
@@ -268,7 +324,8 @@
                 <button id="source-toggle-a2" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a2">View CLI source code ▾</button>
                 <div id="source-panel-a2" class="source-panel">
                     <div class="source-files" role="list">
-                        <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part1.py">module2_part1.py</button>
+                        <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part1.py" data-source-path="module2_part1.py">module2_part1.py</button>
+                        <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part2.py" data-source-path="module2_part2.py">module2_part2.py</button>
                     </div>
                     <pre class="source-code" id="source-code-a2"><code></code></pre>
                 </div>

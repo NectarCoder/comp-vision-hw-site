@@ -1,4 +1,4 @@
-"""Gaussian blur and Fourier-based inverse filtering pipeline."""
+"""Gaussian blur and Fourier-based inverse filtering process."""
 
 from __future__ import annotations
 

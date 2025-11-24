@@ -1,11 +1,20 @@
+import base64
+from pathlib import Path
+from tempfile import TemporaryDirectory
+
 from flask import Flask, render_template, request, jsonify, send_from_directory, abort
 from flask_cors import CORS
+from werkzeug.utils import secure_filename
+
 from hwsources.module1 import calculate_focal_length, calculate_real_dimension
+from hwsources.module2_part2 import process_image as module2_process_image
 
 # Serve static assets from the templates folder so they can be moved
 # from /static into /templates while keeping the same "url_for('static', ...)"
 app = Flask(__name__, static_folder='templates', static_url_path='/static')
 CORS(app)  # Enable CORS for all routes
+
+ALLOWED_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
 
 # --- Routes ---
 
@@ -86,6 +95,73 @@ def handle_a2():
     # TODO: Connect Module 2 code
     response = f"[Stub] Module 2 executed on input length: {len(user_input)}"
     return jsonify({'result': response})
+
+
+@app.route('/api/a2/part1', methods=['POST'])
+def handle_a2_part1_stub():
+    data = request.get_json(silent=True) or {}
+    user_input = data.get('input', '')
+    response = (
+        "[Stub] Module 2 Part 1 placeholder — received input length: "
+        f"{len(user_input)}. UI only for now."
+    )
+    return jsonify({'result': response})
+
+
+@app.route('/api/a2/part2', methods=['POST'])
+def handle_a2_part2_process():
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image file provided'}), 400
+
+    image_file = request.files['image']
+    if image_file.filename == '':
+        return jsonify({'error': 'Empty filename supplied'}), 400
+
+    filename = secure_filename(image_file.filename) or 'upload.png'
+    suffix = Path(filename).suffix.lower()
+    if suffix not in ALLOWED_IMAGE_EXTENSIONS:
+        return jsonify({'error': 'Unsupported file type'}), 400
+
+    try:
+        with TemporaryDirectory() as tmpdir:
+            tmp_dir_path = Path(tmpdir)
+            input_path = tmp_dir_path / filename
+            image_file.save(input_path)
+
+            blur_override = tmp_dir_path / f"{input_path.stem}_blurred.png"
+            restored_override = tmp_dir_path / f"{input_path.stem}_restored.png"
+
+            (
+                blur_path,
+                restored_path,
+                kernel_used,
+                sigma_used,
+            ) = module2_process_image(
+                input_image=input_path,
+                kernel_size=None,
+                sigma=None,
+                balance=1e-2,
+                eps=1e-6,
+                blur_output=str(blur_override),
+                restored_output=str(restored_override),
+            )
+
+            def _path_to_data_url(image_path: Path) -> str:
+                data = image_path.read_bytes()
+                encoded = base64.b64encode(data).decode('ascii')
+                return f"data:image/png;base64,{encoded}"
+
+            return jsonify({
+                'blurredImage': _path_to_data_url(Path(blur_path)),
+                'restoredImage': _path_to_data_url(Path(restored_path)),
+                'originalFilename': filename,
+                'kernelSize': kernel_used,
+                'sigma': sigma_used,
+            })
+    except FileNotFoundError:
+        return jsonify({'error': 'Uploaded image could not be processed'}), 400
+    except Exception as exc:
+        return jsonify({'error': f'Processing failed: {exc}'}), 500
 
 @app.route('/api/a3', methods=['POST'])
 def handle_a3():

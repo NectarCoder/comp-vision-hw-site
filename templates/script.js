@@ -228,6 +228,8 @@ async function runModule(id) {
     }
 }
 
+document.addEventListener('DOMContentLoaded', initModule2Flow);
+
 (function () {
     const themeToggle = document.getElementById('theme-toggle');
     const iconEl = document.getElementById('theme-icon');
@@ -264,6 +266,155 @@ async function runModule(id) {
 })();
 
 document.addEventListener('DOMContentLoaded', initModule1Flow);
+
+function initModule2Flow() {
+    const form = document.getElementById('module2-part2-form');
+    const fileInput = document.getElementById('module2-image-input');
+    const runBtn = document.getElementById('module2-run-btn');
+    const resetBtn = document.getElementById('module2-reset-btn');
+    const statusLine = document.getElementById('module2-part2-status');
+    const originalImg = document.getElementById('module2-original-preview');
+    const originalPlaceholder = document.getElementById('module2-original-placeholder');
+    const blurredImg = document.getElementById('module2-blurred-preview');
+    const restoredImg = document.getElementById('module2-restored-preview');
+    const blurredPlaceholder = document.getElementById('module2-blurred-placeholder');
+    const restoredPlaceholder = document.getElementById('module2-restored-placeholder');
+
+    if (!form || !fileInput || !runBtn || !resetBtn || !statusLine || !blurredImg || !restoredImg || !originalImg) {
+        return;
+    }
+
+    const resultFrames = [
+        { img: originalImg, placeholder: originalPlaceholder, isOriginal: true },
+        { img: blurredImg, placeholder: blurredPlaceholder, isOriginal: false },
+        { img: restoredImg, placeholder: restoredPlaceholder, isOriginal: false }
+    ];
+
+    const hasFileSelected = () => Boolean(fileInput.files && fileInput.files.length);
+    const hasResults = () => resultFrames.some(({ img, isOriginal }) => !isOriginal && img.dataset.loaded === 'true');
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const showImage = (imgEl, placeholderEl, dataUrl) => {
+        if (!imgEl) return;
+        imgEl.src = dataUrl;
+        imgEl.hidden = false;
+        imgEl.dataset.loaded = 'true';
+        const wrapper = imgEl.closest('.result-image');
+        if (wrapper) wrapper.dataset.empty = 'false';
+        if (placeholderEl) placeholderEl.hidden = true;
+    };
+
+    const clearResults = (opts = { keepOriginal: false }) => {
+        resultFrames.forEach(({ img, placeholder, isOriginal }) => {
+            if (isOriginal && opts.keepOriginal) {
+                return;
+            }
+            if (!img) return;
+            img.removeAttribute('src');
+            img.hidden = true;
+            img.dataset.loaded = 'false';
+            const wrapper = img.closest('.result-image');
+            if (wrapper) wrapper.dataset.empty = 'true';
+            if (placeholder) {
+                placeholder.hidden = false;
+                placeholder.textContent = isOriginal ? 'No image selected.' : 'No output yet.';
+            }
+        });
+    };
+
+    const showOriginal = (file) => {
+        if (!file) {
+            clearResults({ keepOriginal: false });
+            return;
+        }
+        const reader = new FileReader();
+        reader.onload = (evt) => {
+            showImage(originalImg, originalPlaceholder, evt.target?.result || '');
+        };
+        reader.onerror = () => {
+            clearResults({ keepOriginal: false });
+            setStatus('Could not preview that image locally.', 'error');
+        };
+        reader.readAsDataURL(file);
+    };
+
+    clearResults();
+    setStatus('Choose an image to get started.', 'info');
+
+    fileInput.addEventListener('change', () => {
+        const hasFile = hasFileSelected();
+        runBtn.disabled = !hasFile;
+        resetBtn.disabled = !hasFile && !hasResults();
+        if (hasFile) {
+            showOriginal(fileInput.files[0]);
+            setStatus('Ready to run the process.', 'info');
+        } else if (!hasResults()) {
+            clearResults();
+            setStatus('Choose an image to get started.', 'info');
+        }
+    });
+
+    resetBtn.addEventListener('click', () => {
+        form.reset();
+        clearResults();
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        setStatus('Choose an image to get started.', 'info');
+    });
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!hasFileSelected()) {
+            setStatus('Please select an image before running the process.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        formData.append('image', fileInput.files[0]);
+
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        setStatus('Uploading image and running the Gaussian blur + inverse filtering process...', 'info');
+
+        try {
+            const response = await fetch('/api/a2/part2', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (!response.ok) {
+                throw new Error(data.error || 'Process failed');
+            }
+
+            showImage(blurredImg, blurredPlaceholder, data.blurredImage);
+            showImage(restoredImg, restoredPlaceholder, data.restoredImage);
+            resetBtn.disabled = false;
+            const extraBits = [];
+            if (Number.isFinite(data.kernelSize)) {
+                extraBits.push(`kernel ${data.kernelSize}`);
+            }
+            if (Number.isFinite(data.sigma)) {
+                extraBits.push(`sigma ${Number(data.sigma).toFixed(2)}`);
+            }
+            const meta = extraBits.length ? ` (${extraBits.join(', ')})` : '';
+            setStatus(`Process complete for ${data.originalFilename || 'uploaded image'}${meta}.`, 'success');
+        } catch (err) {
+            clearResults({ keepOriginal: true });
+            setStatus(err.message || 'Unexpected error occurred.', 'error');
+        } finally {
+            if (hasFileSelected()) {
+                runBtn.disabled = false;
+            }
+            if (hasFileSelected() || hasResults()) {
+                resetBtn.disabled = false;
+            }
+        }
+    });
+}
 
 function initModule1Flow() {
     const refCanvas = document.getElementById('ref-canvas');

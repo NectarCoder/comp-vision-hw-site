@@ -25,29 +25,19 @@ def main():
     user_scene = input("Enter path to the Scene Image (e.g., scene.jpg): ").strip()
     user_template_dir = input("Enter directory containing Template images (e.g., ./templates): ").strip()
 
-    # Expand user (~) and normalize
-    scene_path = os.path.expanduser(user_scene)
-    template_dir = os.path.expanduser(user_template_dir)
+    # Expand user (~) and convert to absolute paths
+    scene_path = os.path.abspath(os.path.expanduser(user_scene))
+    template_dir = os.path.abspath(os.path.expanduser(user_template_dir))
 
-    # If scene not found in cwd, try relative to script directory
+    # Check if paths exist
     if not os.path.exists(scene_path):
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        alt_scene = os.path.join(script_dir, scene_path)
-        if os.path.exists(alt_scene):
-            scene_path = alt_scene
-        else:
-            print(f"[ERROR] Scene image '{user_scene}' not found.")
-            return
+        print(f"[ERROR] Scene image '{scene_path}' not found.")
+        return
 
-    # If template dir not found, try relative to script directory
+    # Check if template dir exists
     if not os.path.isdir(template_dir):
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        alt_tdir = os.path.join(script_dir, template_dir)
-        if os.path.isdir(alt_tdir):
-            template_dir = alt_tdir
-        else:
-            print(f"[ERROR] Template directory '{user_template_dir}' not found.")
-            return
+        print(f"[ERROR] Template directory '{template_dir}' not found.")
+        return
 
     # Load Scene
     img_rgb = cv2.imread(scene_path)

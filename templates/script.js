@@ -1,4 +1,25 @@
+const initialActiveTab = document.querySelector('.tab-content.active');
+let activeTabId = initialActiveTab ? initialActiveTab.id : null;
+const tabChangeListeners = [];
+
+function registerTabChangeListener(fn) {
+    if (typeof fn === 'function') {
+        tabChangeListeners.push(fn);
+    }
+}
+
+function notifyTabChangeListeners(prev, next) {
+    tabChangeListeners.forEach((fn) => {
+        try {
+            fn(prev, next);
+        } catch (err) {
+            console.error('Tab change callback failed', err);
+        }
+    });
+}
+
 function switchTab(tabId) {
+    const previousTab = activeTabId;
     document.querySelectorAll('.tab-content').forEach(content => {
         content.classList.remove('active');
     });
@@ -23,6 +44,11 @@ function switchTab(tabId) {
             btn.setAttribute('tabindex', '-1');
         }
     });
+
+    activeTabId = tabId;
+    if (previousTab !== tabId) {
+        notifyTabChangeListeners(previousTab, tabId);
+    }
 }
 
 (function attachTabKeyboard() {
@@ -229,6 +255,7 @@ async function runModule(id) {
 }
 
 document.addEventListener('DOMContentLoaded', initModule2Flow);
+document.addEventListener('DOMContentLoaded', initModule2Part1Flow);
 
 (function () {
     const themeToggle = document.getElementById('theme-toggle');
@@ -414,6 +441,228 @@ function initModule2Flow() {
             }
         }
     });
+}
+
+function initModule2Part1Flow() {
+    const form = document.getElementById('module2-part1-form');
+    if (!form) return;
+
+    const thresholdInput = document.getElementById('module2-part1-threshold');
+    const runBtn = document.getElementById('module2-part1-run-btn');
+    const clearBtn = document.getElementById('module2-part1-clear-btn');
+    const statusLine = document.getElementById('module2-part1-status');
+    const sceneImg = document.getElementById('module2-part1-scene');
+    const scenePlaceholder = document.getElementById('module2-part1-scene-placeholder');
+    const gallery = document.getElementById('module2-part1-gallery');
+    const galleryPlaceholder = document.getElementById('module2-part1-gallery-placeholder');
+    const matchCountEl = document.getElementById('module2-part1-match-count');
+    const totalCountEl = document.getElementById('module2-part1-total');
+
+    if (!thresholdInput || !runBtn || !clearBtn || !statusLine || !gallery || !matchCountEl || !totalCountEl) {
+        return;
+    }
+
+    let sceneLoaded = false;
+    let hasResults = false;
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const setSceneImage = (dataUrl, alt = 'Reference scene for template matching') => {
+        if (!sceneImg) return;
+        if (dataUrl) {
+            sceneImg.src = dataUrl;
+            sceneImg.alt = alt;
+            sceneImg.hidden = false;
+            sceneImg.removeAttribute('aria-hidden');
+            scenePlaceholder && (scenePlaceholder.hidden = true);
+            const wrapper = sceneImg.closest('.result-image');
+            if (wrapper) wrapper.dataset.empty = 'false';
+            sceneLoaded = true;
+        } else {
+            sceneImg.hidden = true;
+            if (scenePlaceholder) scenePlaceholder.hidden = false;
+            const wrapper = sceneImg.closest('.result-image');
+            if (wrapper) wrapper.dataset.empty = 'true';
+        }
+    };
+
+    const templateLabel = (name) => {
+        if (!name) return 'Unknown template';
+        return name
+            .replace(/^template_/i, '')
+            .replace(/_/g, ' ')
+            .replace(/\.png$/i, '')
+            .trim() || name;
+    };
+
+    const renderMatches = (matches = []) => {
+        gallery.innerHTML = '';
+        if (!matches.length) {
+            gallery.dataset.empty = 'true';
+            if (galleryPlaceholder) galleryPlaceholder.hidden = false;
+            return;
+        }
+
+        gallery.dataset.empty = 'false';
+        if (galleryPlaceholder) galleryPlaceholder.hidden = true;
+        matches.forEach((match) => {
+            const card = document.createElement('article');
+            card.className = 'match-card';
+            card.dataset.result = match.matched ? 'hit' : 'miss';
+
+            const header = document.createElement('div');
+            header.className = 'match-card__header';
+
+            const labelSpan = document.createElement('span');
+            labelSpan.className = 'match-chip';
+            labelSpan.textContent = match.matched ? 'Match' : 'No match';
+
+            const title = document.createElement('strong');
+            title.textContent = templateLabel(match.template);
+
+            header.appendChild(labelSpan);
+            header.appendChild(title);
+            card.appendChild(header);
+
+            if (match.matched && match.outputImage) {
+                const img = document.createElement('img');
+                img.src = match.outputImage;
+                img.alt = `Detected ${templateLabel(match.template)}`;
+                img.loading = 'lazy';
+                img.className = 'match-card__image';
+                card.appendChild(img);
+            }
+
+            const message = document.createElement('p');
+            message.className = 'match-card__message';
+            if (match.error) {
+                message.textContent = `Error: ${match.error}`;
+            } else if (match.matched) {
+                message.textContent = 'Correlation above threshold – see highlighted regions.';
+            } else {
+                message.textContent = 'No detections cleared the chosen threshold.';
+            }
+            card.appendChild(message);
+
+            gallery.appendChild(card);
+        });
+    };
+
+    const updateSummary = (matched = 0, total = 0) => {
+        matchCountEl.textContent = matched;
+        totalCountEl.textContent = total;
+    };
+
+    const clearUI = (opts = { resetSummary: true }) => {
+        renderMatches([]);
+        hasResults = false;
+        clearBtn.disabled = true;
+        if (opts.resetSummary) {
+            updateSummary(0, 0);
+        }
+    };
+
+    const clearServerResults = async (options = { silent: false, keepalive: false }) => {
+        try {
+            const usePost = Boolean(options.keepalive);
+            const fetchConfig = {
+                method: usePost ? 'POST' : 'DELETE',
+                keepalive: Boolean(options.keepalive),
+            };
+            if (usePost) {
+                fetchConfig.headers = { 'Content-Type': 'application/json' };
+                fetchConfig.body = JSON.stringify({ cleanup: true });
+            }
+            await fetch('/api/a2/part1/results', fetchConfig);
+        } catch (err) {
+            if (!options.silent) {
+                console.warn('Failed to clear Module 2 Part 1 outputs on server.', err);
+            }
+        }
+    };
+
+    const loadScenePreview = async () => {
+        if (sceneLoaded) return;
+        try {
+            const response = await fetch('/api/a2/part1/scene');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to load scene.');
+            setSceneImage(data.image, `Reference scene (${data.filename || 'scene.jpg'})`);
+            if (scenePlaceholder) scenePlaceholder.textContent = 'Scene preview ready.';
+        } catch (err) {
+            setSceneImage(null);
+            setStatus(err.message, 'error');
+        }
+    };
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const thresholdValue = parseFloat(thresholdInput.value);
+        if (Number.isNaN(thresholdValue) || thresholdValue < 0 || thresholdValue > 1) {
+            setStatus('Please enter a threshold between 0.0 and 1.0.', 'error');
+            return;
+        }
+
+        setStatus('Running correlation across all templates…', 'info');
+        runBtn.disabled = true;
+        thresholdInput.disabled = true;
+
+        try {
+            const response = await fetch('/api/a2/part1', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ threshold: thresholdValue }),
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Correlation run failed.');
+
+            if (data.scene?.image) {
+                setSceneImage(data.scene.image, `Reference scene (${data.scene.filename || 'scene'})`);
+            }
+            renderMatches(data.matches || []);
+            const matched = data.summary?.matched ?? 0;
+            const total = data.summary?.total ?? (data.matches ? data.matches.length : 0);
+            updateSummary(matched, total);
+            hasResults = true;
+            clearBtn.disabled = false;
+
+            if (matched > 0) {
+                setStatus(`Detected ${matched} object(s) using threshold ${thresholdValue.toFixed(2)}.`, 'success');
+            } else {
+                setStatus(`No templates passed the threshold ${thresholdValue.toFixed(2)}.`, 'warning');
+            }
+        } catch (err) {
+            clearUI({ resetSummary: false });
+            setStatus(err.message || 'Unexpected error while running correlation.', 'error');
+        } finally {
+            runBtn.disabled = false;
+            thresholdInput.disabled = false;
+        }
+    });
+
+    clearBtn.addEventListener('click', async () => {
+        clearUI({ resetSummary: true });
+        await clearServerResults({ silent: true });
+        setStatus('Cleared generated match files.', 'info');
+    });
+
+    registerTabChangeListener((prev, next) => {
+        if (prev === 'a2' && next !== 'a2') {
+            clearUI({ resetSummary: true });
+            clearServerResults({ silent: true });
+        } else if (next === 'a2') {
+            loadScenePreview();
+        }
+    });
+
+    window.addEventListener('beforeunload', () => {
+        clearServerResults({ silent: true, keepalive: true });
+    });
+
+    loadScenePreview();
 }
 
 function initModule1Flow() {

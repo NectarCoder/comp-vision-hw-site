@@ -7,6 +7,7 @@ from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 from hwsources.module1 import calculate_focal_length, calculate_real_dimension
+from hwsources.module2_part1 import match_template
 from hwsources.module2_part2 import process_image as module2_process_image
 
 # Serve static assets from the templates folder so they can be moved
@@ -15,6 +16,108 @@ app = Flask(__name__, static_folder='templates', static_url_path='/static')
 CORS(app)  # Enable CORS for all routes
 
 ALLOWED_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
+PROJECT_ROOT = Path(__file__).resolve().parent
+MODULE2_PART1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm2'
+MODULE2_PART1_SCENE = MODULE2_PART1_DIR / 'scene.jpg'
+
+
+def _image_file_to_data_url(path: Path) -> str:
+    """Return a base64 data URL for the given image path."""
+    suffix = path.suffix.lower()
+    mime = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.bmp': 'image/bmp',
+        '.tif': 'image/tiff',
+        '.tiff': 'image/tiff'
+    }.get(suffix, 'application/octet-stream')
+
+    data = path.read_bytes()
+    encoded = base64.b64encode(data).decode('ascii')
+    return f"data:{mime};base64,{encoded}"
+
+
+def _clear_module2_part1_results() -> int:
+    """Remove generated match images from the Module 2 Part 1 resources folder."""
+    if not MODULE2_PART1_DIR.exists():
+        return 0
+
+    deleted = 0
+    for path in MODULE2_PART1_DIR.glob('*_matched_template_*'):
+        try:
+            path.unlink()
+            deleted += 1
+        except FileNotFoundError:
+            continue
+    return deleted
+
+
+def _run_module2_part1(threshold: float):
+    """Execute template matching for every template_* file and collect results."""
+    if not MODULE2_PART1_SCENE.exists():
+        raise FileNotFoundError(f"Scene file missing: {MODULE2_PART1_SCENE}")
+
+    template_files = sorted(MODULE2_PART1_DIR.glob('template_*.png'))
+    if not template_files:
+        raise FileNotFoundError(
+            "No template files found in resources/m2 (expected files starting with 'template_')."
+        )
+
+    _clear_module2_part1_results()
+
+    matches = []
+    for tpl in template_files:
+        tpl_name = tpl.name
+        output_path = MODULE2_PART1_SCENE.with_name(
+            f"{MODULE2_PART1_SCENE.stem}_matched_{tpl.stem}{MODULE2_PART1_SCENE.suffix}"
+        )
+
+        try:
+            matched = match_template(
+                scene_path=str(MODULE2_PART1_SCENE),
+                template_path=str(tpl),
+                threshold=threshold,
+                save_result=True,
+                draw_all=True,
+            )
+        except Exception as exc:
+            matches.append({
+                'template': tpl_name,
+                'matched': False,
+                'error': str(exc),
+                'outputImage': None,
+            })
+            continue
+
+        if matched and output_path.exists():
+            image_data = _image_file_to_data_url(output_path)
+        else:
+            image_data = None
+
+        matches.append({
+            'template': tpl_name,
+            'matched': bool(matched and image_data),
+            'error': None,
+            'outputImage': image_data,
+            'outputFilename': output_path.name if image_data else None,
+        })
+
+    scene_data = _image_file_to_data_url(MODULE2_PART1_SCENE)
+
+    matched_count = sum(1 for m in matches if m['matched'])
+    return {
+        'threshold': threshold,
+        'scene': {
+            'filename': MODULE2_PART1_SCENE.name,
+            'image': scene_data,
+        },
+        'matches': matches,
+        'summary': {
+            'matched': matched_count,
+            'total': len(matches),
+        }
+    }
 
 # --- Routes ---
 
@@ -98,14 +201,42 @@ def handle_a2():
 
 
 @app.route('/api/a2/part1', methods=['POST'])
-def handle_a2_part1_stub():
+def handle_a2_part1_run():
     data = request.get_json(silent=True) or {}
-    user_input = data.get('input', '')
-    response = (
-        "[Stub] Module 2 Part 1 placeholder — received input length: "
-        f"{len(user_input)}. UI only for now."
-    )
-    return jsonify({'result': response})
+    threshold = data.get('threshold', 0.8)
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Threshold must be a numeric value between 0.0 and 1.0.'}), 400
+
+    if not 0.0 <= threshold <= 1.0:
+        return jsonify({'error': 'Threshold must be between 0.0 and 1.0.'}), 400
+
+    try:
+        results = _run_module2_part1(threshold)
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run template matching: {exc}'}), 500
+
+    return jsonify(results)
+
+
+@app.route('/api/a2/part1/scene', methods=['GET'])
+def get_a2_part1_scene():
+    if not MODULE2_PART1_SCENE.exists():
+        return jsonify({'error': f"Scene file missing at {MODULE2_PART1_SCENE}"}), 404
+
+    return jsonify({
+        'filename': MODULE2_PART1_SCENE.name,
+        'image': _image_file_to_data_url(MODULE2_PART1_SCENE),
+    })
+
+
+@app.route('/api/a2/part1/results', methods=['DELETE', 'POST'])
+def clear_a2_part1_results():
+    deleted = _clear_module2_part1_results()
+    return jsonify({'deleted': deleted})
 
 
 @app.route('/api/a2/part2', methods=['POST'])

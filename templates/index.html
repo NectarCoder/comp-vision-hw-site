@@ -255,12 +255,43 @@
             <section class="module2-card" id="module2-part1" aria-labelledby="module2-part1-title">
                 <header class="module2-card__header">
                     <div>
-                        <h3 id="module2-part1-title">Part 1 – Template Matching</h3>
-                        <p>Part 1 is still being adapted for the web interface. The CLI source remains available below for reference.</p>
+                        <h3 id="module2-part1-title">Part 1 - Template Matching</h3>
+                        <p>Run the correlation test with a set scene and template object images. No uploads needed - just set the threshold and run.</p>
                     </div>
                 </header>
                 <div class="module2-card__body">
-                    <p class="hint">Interactive controls for Part 1 will appear once the matching program is ported. For now, explore the CLI code via the source viewer.</p>
+                    <div class="module2-part1-grid">
+                        <form id="module2-part1-form" class="module2-part1-form" aria-label="Module 2 Part 1 form">
+                            <div class="field">
+                                <label for="module2-part1-threshold">Detection threshold (0.0 - 1.0)</label>
+                                <input type="number" id="module2-part1-threshold" name="threshold" min="0" max="1" step="0.01" value="0.80" required>
+                                <p class="hint">Higher values demand stronger correlation. 0.80 approximates the CLI default.<br>Please note that the match finding process might take a moment - please be patient!</p>
+                            </div>
+                            <div class="module2-actions">
+                                <button type="submit" class="primary-btn" id="module2-part1-run-btn">Test Correlation</button>
+                                <button type="button" class="subtle-btn" id="module2-part1-clear-btn" disabled>Clear results</button>
+                            </div>
+                            <div class="status-line" id="module2-part1-status" data-variant="info">Load the Module 2 tab to view the reference scene, then run the detector.</div>
+                            <div class="module2-part1-summary" id="module2-part1-summary" aria-live="polite">
+                                <span>Matches detected: <strong id="module2-part1-match-count">0</strong>/<span id="module2-part1-total">0</span></span>
+                            </div>
+                        </form>
+                        <div class="module2-part1-visuals">
+                            <div class="result-frame">
+                                <h4>Reference Scene</h4>
+                                <div class="result-image" data-empty="true">
+                                    <img id="module2-part1-scene" alt="Scene used for matching" hidden>
+                                    <p id="module2-part1-scene-placeholder">Scene preview loading…</p>
+                                </div>
+                            </div>
+                            <div class="result-frame">
+                                <h4>Generated Match Files</h4>
+                                <div class="match-gallery" id="module2-part1-gallery" data-empty="true">
+                                    <p id="module2-part1-gallery-placeholder">Run the test to see each template outcome.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
 

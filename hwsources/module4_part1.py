@@ -1,15 +1,19 @@
 """
 CSC 8830 Computer Vision
-Module 4 Assignment Part 1 - Image Stitching (Stable)
+Dr. Ashwin Ashok
+Avyuktkrishna Ramasamy
+Module 4 Assignment Part 1 - Image Stitching
 
-Changes:
-- RESIZING: Downscales input images to 800px width to prevent memory explosion.
-- ROBUSTNESS: Stricter matching thresholds.
-- ORDERING: Natural sort fixed.
+The purpose of the script is to create a panorama by stitching
+together several overlapping landscape orientation images. It
+should be comparable to the panorama mode on a smartphone.
 
 Usage:
-    1. Run: python module4_part1.py
-    2. Enter folder path.
+    1. First make sure that the landscape images (at least 4) are in a folder
+    2. Run the script - python module4_part1.py
+    3. When prompted enter the path to the folder - path/to/folder/
+    4. Images stitched left to right
+    5. Final panorama will be saved as stitched_result.jpg and displayed
 """
 
 import cv2

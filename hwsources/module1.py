@@ -35,6 +35,7 @@ import cv2
 import math
 import os
 
+# Core Logic of the Pinhole Camera Model
 
 def calculate_focal_length(pixel_width, real_width, distance):
     """Compute focal length (pixels) from pixel width, real width, and distance."""
@@ -49,6 +50,42 @@ def calculate_real_dimension(pixel_width, focal_length, distance):
         raise ValueError("Focal length must be non-zero")
     return (pixel_width * distance) / focal_length
 
+# Basic utility functions
+
+def prompt_float(prompt_text):
+    """Read a float from stdin. Returns None if parsing fails."""
+    try:
+        return float(input(prompt_text).strip())
+    except ValueError:
+        print("[ERROR] Invalid numeric input.")
+        return None
+
+
+def prompt_image(label, prompt_text):
+    """Prompt for an image path and return the loaded image or None."""
+    image_path = input(prompt_text).strip()
+    image = load_image(image_path)
+    if image is None:
+        print(f"[ERROR] Could not load {label.lower()} image: {image_path}")
+    else:
+        print(f"[INFO] {label} image loaded successfully.")
+    return image
+
+
+def print_section(title):
+    print("\n" + "=" * 70)
+    print(title)
+    print("=" * 70)
+
+
+def show_intro():
+    print("=" * 70)
+    print("          Object Dimension Calculator          ")
+    print("=" * 70)
+    print("\n[IMPORTANT] Both the REFERENCE and TEST images MUST be taken by the")
+    print("            SAME CAMERA for accurate results!\n")
+
+# Main Functions for CLI Interaction + OpenCV
 
 def load_image(image_path, max_height=800):
     """Load an image, optionally resizing by height for consistent display."""
@@ -116,40 +153,6 @@ def select_two_points_on_image(image, window_name="Select Points"):
     cv2.waitKey(300)
     cv2.destroyWindow(window_name)
     return tuple(points) if len(points) == 2 else (None, None)
-
-
-def prompt_float(prompt_text):
-    """Read a float from stdin. Returns None if parsing fails."""
-    try:
-        return float(input(prompt_text).strip())
-    except ValueError:
-        print("[ERROR] Invalid numeric input.")
-        return None
-
-
-def prompt_image(label, prompt_text):
-    """Prompt for an image path and return the loaded image or None."""
-    image_path = input(prompt_text).strip()
-    image = load_image(image_path)
-    if image is None:
-        print(f"[ERROR] Could not load {label.lower()} image: {image_path}")
-    else:
-        print(f"[INFO] {label} image loaded successfully.")
-    return image
-
-
-def print_section(title):
-    print("\n" + "=" * 70)
-    print(title)
-    print("=" * 70)
-
-
-def show_intro():
-    print("=" * 70)
-    print("          Object Dimension Calculator          ")
-    print("=" * 70)
-    print("\n[IMPORTANT] Both the REFERENCE and TEST images MUST be taken by the")
-    print("            SAME CAMERA for accurate results!\n")
 
 
 def calibrate_camera():
@@ -229,6 +232,7 @@ def measure_test_object(focal_length):
     print("=" * 70)
     print("\n[INFO] Calculation complete. Program ending.")
 
+# Main method
 
 def main():
     """Run CLI to compute object dimensions using the pinhole camera model."""

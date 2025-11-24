@@ -7,6 +7,8 @@
     <title>Krishna's CSC 8830 Coursework</title>
     <link rel="icon" href="{{ url_for('static', filename='favicon.ico') }}" type="image/x-icon">
     <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+    <!-- Syntax highlighting for inline source previews -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/styles/atom-one-dark.min.css">
 </head>
 
 <body class="dark">
@@ -99,10 +101,132 @@
         <div id="a1" class="tab-content">
             <h2>Module 1 Assignment</h2>
             <p class="description">Object Dimension Calculator</p>
-            <div class="module-container">
-                <textarea id="input-a1" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runModule('a1')">Run Module 1</button>
-                <div id="output-a1" class="output-box">// Output will appear here...</div>
+            <div class="module1-app" aria-live="polite">
+                <section class="step-card" id="module1-ref-card">
+                    <header class="step-card__header">
+                        <span class="step-pill">Step 1</span>
+                        <div>
+                            <h3>Calibrate with a reference image</h3>
+                            <p>
+                                Select two points on a known object to recover the camera's focal length.<br>
+                                <u>IMPORTANT:</u> Both the reference and test images <strong>must</strong> be captured using the same camera!!
+                            </p>
+                        </div>
+                    </header>
+                    <div class="step-card__body">
+                        <div class="step-actions">
+                            <label class="file-input">
+                                <input type="file" accept="image/*" id="ref-image-input">
+                                <span>Choose reference image</span>
+                            </label>
+                            <button type="button" class="subtle-btn" id="ref-clear-btn" disabled>Clear image</button>
+                        </div>
+                        <div class="canvas-wrapper" data-state="empty">
+                            <canvas id="ref-canvas" class="measure-canvas" role="img" aria-label="Reference image canvas"></canvas>
+                            <div class="canvas-empty" id="ref-canvas-empty">Upload an image, then click two points to mark its width.</div>
+                        </div>
+                        <div class="point-controls">
+                            <div>
+                                <span class="metric-label">Pixel width</span>
+                                <span class="metric-value" id="ref-pixel-width">--</span>
+                            </div>
+                            <button type="button" class="subtle-btn" id="ref-reset-points" disabled>Reset points</button>
+                        </div>
+                        <div class="field-grid">
+                            <label class="field">
+                                <span>Real-world width (cm)</span>
+                                <input type="number" id="ref-real-width" min="0" step="0.01" placeholder="e.g. 3.5">
+                            </label>
+                            <label class="field">
+                                <span>Camera distance (cm)</span>
+                                <input type="number" id="ref-distance" min="0" step="0.1" placeholder="e.g. 25">
+                            </label>
+                        </div>
+                        <button type="button" class="primary-btn" id="ref-calc-btn" disabled>Calculate focal length</button>
+                        <div class="status-line" id="ref-status">Upload a reference image to begin calibration.</div>
+                    </div>
+                </section>
+
+                <section class="step-card locked" id="module1-test-card" aria-disabled="true">
+                    <header class="step-card__header">
+                        <span class="step-pill">Step 2</span>
+                        <div>
+                            <h3>Measure an unknown object</h3>
+                            <p>Use the stored focal length with a new image captured by the same camera.</p>
+                        </div>
+                    </header>
+                    <div class="step-card__body">
+                        <div class="step-actions">
+                            <label class="file-input">
+                                <input type="file" accept="image/*" id="test-image-input" disabled>
+                                <span>Choose test image</span>
+                            </label>
+                            <button type="button" class="subtle-btn" id="test-clear-btn" disabled>Clear image</button>
+                        </div>
+                        <div class="canvas-wrapper" data-state="empty">
+                            <canvas id="test-canvas" class="measure-canvas" role="img" aria-label="Test image canvas"></canvas>
+                            <div class="canvas-empty" id="test-canvas-empty">Upload a test image to measure another object.</div>
+                        </div>
+                        <div class="point-controls">
+                            <div>
+                                <span class="metric-label">Pixel width</span>
+                                <span class="metric-value" id="test-pixel-width">--</span>
+                            </div>
+                            <button type="button" class="subtle-btn" id="test-reset-points" disabled>Reset points</button>
+                        </div>
+                        <div class="field-grid single">
+                            <label class="field">
+                                <span>Camera distance (cm)</span>
+                                <input type="number" id="test-distance" min="0" step="0.1" placeholder="e.g. 40" disabled>
+                            </label>
+                        </div>
+                        <button type="button" class="primary-btn" id="test-calc-btn" disabled>Calculate real-world width</button>
+                        <div class="status-line" id="test-status">Complete Step 1 to unlock measurement.</div>
+                    </div>
+                </section>
+
+                <section class="step-card" id="module1-summary-card">
+                    <header class="step-card__header">
+                        <span class="step-pill">Step 3</span>
+                        <div>
+                            <h3>Results</h3>
+                            <p>Interpretable metrics from the two-step workflow will appear below.</p>
+                        </div>
+                    </header>
+                    <div class="summary-grid">
+                        <div>
+                            <span class="metric-label">Reference pixel width</span>
+                            <span class="metric-value" id="summary-ref-px">--</span>
+                        </div>
+                        <div>
+                            <span class="metric-label">Reference distance (cm)</span>
+                            <span class="metric-value" id="summary-ref-dist">--</span>
+                        </div>
+                        <div>
+                            <span class="metric-label">Test distance (cm)</span>
+                            <span class="metric-value" id="summary-test-dist">--</span>
+                        </div>
+                        <div>
+                            <span class="metric-label">Test pixel width</span>
+                            <span class="metric-value" id="summary-test-px">--</span>
+                        </div>
+                        <div>
+                            <span class="metric-label">
+                                Focal length (px)
+                                <small style="font-size:0.75em; color:inherit; font-weight:400; margin-left:0.25rem;">
+                                    (derived from Reference Image)
+                                </small>
+                            </span>
+                            <span class="metric-value" id="summary-focal">--</span>
+                        </div>
+                        <div>
+                            <span class="metric-label">Calculated <strong>Test</strong> Object real width (cm)</span>
+                            <span class="metric-value" id="summary-real-width">--</span>
+                        </div>
+                    </div>
+                    <div class="result-banner" id="module1-result-banner">Run the steps to see the measurement summary.</div>
+                    <button type="button" class="subtle-btn" id="module1-reset">Start over</button>
+                </section>
             </div>
             <!-- Watch the video (collapsed by default) -->
             <section class="video-section" aria-labelledby="video-toggle-a1">
@@ -113,10 +237,10 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a1">
-                <button id="source-toggle-a1" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a1">View source code ▾</button>
+                <button id="source-toggle-a1" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a1">View CLI source code ▾</button>
                 <div id="source-panel-a1" class="source-panel">
                     <div class="source-files" role="list">
-                        <button class="source-file" role="listitem" data-module="a1" data-filename="module1.py">module1.py</button>
+                        <button class="source-file" role="listitem" data-module="a1" data-filename="module1.py" data-source-path="module1.py">module1.py</button>
                     </div>
                     <pre class="source-code" id="source-code-a1"><code></code></pre>
                 </div>
@@ -141,7 +265,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a2">
-                <button id="source-toggle-a2" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a2">View source code ▾</button>
+                <button id="source-toggle-a2" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a2">View CLI source code ▾</button>
                 <div id="source-panel-a2" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part1.py">module2_part1.py</button>
@@ -169,7 +293,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a3">
-                <button id="source-toggle-a3" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a3">View source code ▾</button>
+                <button id="source-toggle-a3" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a3">View CLI source code ▾</button>
                 <div id="source-panel-a3" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a3" data-filename="module3_part1.py">module3_part1.py</button>
@@ -197,7 +321,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a4">
-                <button id="source-toggle-a4" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a4">View source code ▾</button>
+                <button id="source-toggle-a4" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a4">View CLI source code ▾</button>
                 <div id="source-panel-a4" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a4" data-filename="module4_part1.py">module4_part1.py</button>
@@ -225,7 +349,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a56">
-                <button id="source-toggle-a56" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a56">View source code ▾</button>
+                <button id="source-toggle-a56" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a56">View CLI source code ▾</button>
                 <div id="source-panel-a56" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a56" data-filename="module5_6_part1.py">module5_6_part1.py</button>
@@ -253,7 +377,7 @@
             </section>
             <!-- Source code explorer (collapsed by default) -->
             <section class="source-section" aria-labelledby="source-toggle-a7">
-                <button id="source-toggle-a7" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a7">View source code ▾</button>
+                <button id="source-toggle-a7" class="source-toggle" aria-expanded="false" aria-controls="source-panel-a7">View CLI source code ▾</button>
                 <div id="source-panel-a7" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a7" data-filename="module7_part1.py">module7_part1.py</button>
@@ -265,6 +389,8 @@
 
     </main>
 
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.8.0/highlight.min.js"></script>
+    <script>/* lightweight init for highlight.js */ try { if (window.hljs && hljs.highlightAll) hljs.highlightAll(); } catch(e) { /* ignore */ }</script>
     <script src="{{ url_for('static', filename='script.js') }}"></script>
 
 </body>

@@ -1,4 +1,26 @@
-"""Gaussian blur and Fourier-based inverse filtering pipeline."""
+"""
+CSC 8830 Computer Vision
+Dr. Ashwin Ashok
+Avyuktkrishna Ramasamy
+Module 2 Assignment Part 2 - Gaussian Blur and Inverse Filtering (Fourier Transform)
+
+The purpose of the script is to apply Gaussian 
+blur to an input image, then use Fourier Transform 
+in order to unblur the image.
+
+Process
+1. Upon request, the user provides the path to a specific image
+2. If the path is valid (file exists) and the file is valid then image is blurred
+	a. Gaussian blur - kernel size and sigma are determined automatically by using image dimensions when not specified 
+	(output is called <input>_b.<ext>) and restored (output is called <input>_restored.<ext>)
+	b. Transforming blurred image and Gaussian kernel to frequency domain using FFT, applying inverse filter (dividing blurred image FFT by kernel FFT), and transforming back to spatial domain
+3. Output images are saved to disk
+4. Kernel size and sigma values, along with image file paths are displayed to the user
+
+Usage:
+    Run the script from CLI - python module2_part2.py
+    Enter the image to the path - /path/to/the/image.jpg
+"""
 
 from __future__ import annotations
 

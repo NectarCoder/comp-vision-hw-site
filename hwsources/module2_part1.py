@@ -1,4 +1,20 @@
-# TODO DESCRIPTION
+"""
+CSC 8830 Computer Vision
+Dr. Ashwin Ashok
+Avyuktkrishna Ramasamy
+Module 2 Assignment Part 1 - Object Detection with Correlation-based Template Matching
+
+The purpose of this script is to detect an object in several scene images from a specified template.
+OpenCV's template matching functionality with normalized cross-correlation has been used for object 
+detection, even if lighting conditions change a little from picture to picture. Once correlation 
+scores have been calculated, if any value exceeds a threshold (0.8) then it is considered that the 
+object has been found. Object will be highlighted with a box in the output display.
+
+Usage:
+    Run the script - python module2_part1.py
+    Enter path to the template image - path/to/the/template.jpg
+    Enter directory containing scene image(s) path/to/the/scenes/
+"""
 
 from __future__ import annotations
 

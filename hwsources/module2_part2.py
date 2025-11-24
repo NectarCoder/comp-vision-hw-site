@@ -10,6 +10,10 @@ import numpy as np
 
 # Gaussian & fourier transform code
 
+AUTO_KERNEL_MIN = 5
+AUTO_KERNEL_MAX = 151  # Keep computation practical for very large frames
+AUTO_KERNEL_FRACTION = 0.03  # Scale relative to the smaller image dimension
+
 def gaussian_kernel(size: int, sigma: float) -> np.ndarray:
 	# Ensure kernel size is odd for symmetric filtering
 	if size % 2 == 0:
@@ -26,6 +30,24 @@ def gaussian_kernel(size: int, sigma: float) -> np.ndarray:
 def apply_gaussian_blur(image: np.ndarray, kernel_size: int, sigma: float) -> np.ndarray:
 	# Apply Gaussian blur using OpenCV
 	return cv2.GaussianBlur(image, (kernel_size, kernel_size), sigmaX=sigma, sigmaY=sigma)
+
+
+def _resolve_kernel_params(
+	shape: Tuple[int, int, int],
+	kernel_size: Optional[int],
+	sigma: Optional[float],
+) -> Tuple[int, float]:
+	"""Derive kernel size / sigma defaults that scale with input resolution."""
+	if kernel_size is None or kernel_size <= 0:
+		height, width = shape[:2]
+		min_dim = min(height, width)
+		suggested = max(AUTO_KERNEL_MIN, int(round(min_dim * AUTO_KERNEL_FRACTION)))
+		if suggested % 2 == 0:
+			suggested += 1
+		kernel_size = min(suggested, AUTO_KERNEL_MAX)
+	if sigma is None or sigma <= 0:
+		sigma = max(1.0, kernel_size / 6.0)
+	return int(kernel_size), float(sigma)
 
 
 def _kernel_fft(shape: Tuple[int, int], kernel: np.ndarray) -> np.ndarray:
@@ -92,20 +114,21 @@ def derive_output_paths(
 
 def process_image(
 	input_image: Path,
-	kernel_size: int,
-	sigma: float,
+	kernel_size: Optional[int],
+	sigma: Optional[float],
 	balance: float,
 	eps: float,
 	blur_output: Optional[str],
 	restored_output: Optional[str],
-) -> Tuple[Path, Path]:
+) -> Tuple[Path, Path, int, float]:
 	original = load_image(input_image)
-	blurred = apply_gaussian_blur(original, kernel_size, sigma)
-	restored = inverse_filter_deblur(blurred, kernel_size, sigma, balance, eps)
+	resolved_kernel, resolved_sigma = _resolve_kernel_params(original.shape, kernel_size, sigma)
+	blurred = apply_gaussian_blur(original, resolved_kernel, resolved_sigma)
+	restored = inverse_filter_deblur(blurred, resolved_kernel, resolved_sigma, balance, eps)
 	blur_path, restored_path = derive_output_paths(input_image, blur_output, restored_output)
 	save_image(blur_path, blurred)
 	save_image(restored_path, restored)
-	return blur_path, restored_path
+	return blur_path, restored_path, resolved_kernel, resolved_sigma
 
 
 # Main program with interactive user input
@@ -116,10 +139,10 @@ def main() -> None:
 	input_path = Path(image_path_str)
 	
 	# Use default parameters for Gaussian blur and inverse filter
-	blur_path, restored_path = process_image(
+	blur_path, restored_path, kernel_used, sigma_used = process_image(
 		input_image=input_path,
-		kernel_size=21,
-		sigma=5.0,
+		kernel_size=None,
+		sigma=None,
 		balance=1e-2,
 		eps=1e-6,
 		blur_output=None,
@@ -127,6 +150,7 @@ def main() -> None:
 	)
 	print(f"Blurred image saved to {blur_path}")
 	print(f"Restored image saved to {restored_path}")
+	print(f"Parameters used -> kernel size: {kernel_used}, sigma: {sigma_used:.2f}")
 
 
 if __name__ == "__main__":

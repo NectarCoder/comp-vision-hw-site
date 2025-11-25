@@ -310,7 +310,7 @@ button.run-btn:hover { background-color: var(--primary-hover); }
 .source-code::-webkit-scrollbar-track { background: transparent; }
 
 /* Make sure panels look and read well when hidden (visually collapsed) */
-.source-panel.open, .video-panel.open { max-height: 1200px; padding: 1rem; opacity: 1; transform: translateY(0); }
+.source-panel.open, .video-panel.open, .instructions-panel.open { max-height: 1200px; padding: 1rem; opacity: 1; transform: translateY(0); }
 .source-panel.open .source-files, .source-panel.open .source-code { opacity: 1; transform: translateY(0); }
 
 /* Video explorer styles — visually similar to source explorer */
@@ -322,6 +322,61 @@ button.run-btn:hover { background-color: var(--primary-hover); }
 .video-panel.open { max-height: 1200px; padding: 1rem; opacity: 1; transform: translateY(0); }
 .video-container { min-height: 140px; border-radius: 6px; background: var(--surface); border: 1px solid var(--border); display:flex; align-items:center; justify-content:center; color:var(--muted); opacity:0; transform: translateY(-6px); transition: opacity 180ms ease, transform 180ms ease; }
 .video-panel.open .video-container { opacity:1; transform: translateY(0); }
+
+/* Module instructions panel styles */
+.instructions-section { margin-top: 1rem; }
+.instructions-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--primary);
+    padding: 0.45rem 0.75rem;
+    border-radius: 8px;
+    cursor: pointer;
+    font-weight: 600;
+}
+.instructions-toggle[aria-expanded="true"] { background: var(--tab-active-bg); }
+.instructions-toggle:focus { outline: 3px solid rgba(37,99,235,0.18); outline-offset: 4px; }
+.instructions-panel {
+    margin-top: 0.75rem;
+    max-height: 0;
+    padding: 0 1rem;
+    border-radius: 8px;
+    border: 1px dashed var(--border);
+    background: var(--surface-hover);
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-8px);
+    transition: max-height 320ms cubic-bezier(.2,.9,.2,1), opacity 220ms ease, transform 220ms ease, padding 220ms ease;
+}
+.instructions-panel__body {
+    border-radius: 10px;
+    border: 1px solid var(--border);
+    background: var(--surface);
+    min-height: 280px;
+    overflow: hidden;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity 180ms ease, transform 180ms ease;
+}
+.instructions-panel.open .instructions-panel__body {
+    opacity: 1;
+    transform: translateY(0);
+}
+.instructions-panel__viewer {
+    width: 100%;
+    height: 480px;
+    border: none;
+    display: block;
+    background: #fff;
+}
+.instructions-panel__note {
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
 
 /* Module 1 Interactive UI */
 .module1-app {

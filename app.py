@@ -22,6 +22,30 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 MODULE2_PART1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm2'
 MODULE2_PART1_SCENE = MODULE2_PART1_DIR / 'scene.jpg'
 MODULE2_PART3_TEMPLATE_LIMIT = 25
+INSTRUCTIONS_DIR = PROJECT_ROOT / 'hwinstructions'
+
+MODULE_INSTRUCTION_FILES = {
+    'a1': 'Assignment1.pdf',
+    'module1': 'Assignment1.pdf',
+    '1': 'Assignment1.pdf',
+    'a2': 'Assignment2.pdf',
+    'module2': 'Assignment2.pdf',
+    '2': 'Assignment2.pdf',
+    'a3': 'Assignment3.pdf',
+    'module3': 'Assignment3.pdf',
+    '3': 'Assignment3.pdf',
+    'a4': 'Assignment4.pdf',
+    'module4': 'Assignment4.pdf',
+    '4': 'Assignment4.pdf',
+    'a56': 'Assignment5-6.pdf',
+    'module5': 'Assignment5-6.pdf',
+    'module6': 'Assignment5-6.pdf',
+    '5': 'Assignment5-6.pdf',
+    '6': 'Assignment5-6.pdf',
+    'a7': 'Assignment7.pdf',
+    'module7': 'Assignment7.pdf',
+    '7': 'Assignment7.pdf',
+}
 
 
 def _image_file_to_data_url(path: Path) -> str:
@@ -261,6 +285,21 @@ def favicon():
     we add this small route so the favicon is available at the expected path.
     """
     return send_from_directory(app.static_folder, 'favicon.ico')
+
+
+@app.route('/instructions/<module_id>')
+def module_instructions(module_id: str):
+    """Serve the assignment PDF for the requested module, if it exists."""
+    key = (module_id or '').lower()
+    pdf_name = MODULE_INSTRUCTION_FILES.get(key)
+    if not pdf_name:
+        abort(404)
+
+    pdf_path = INSTRUCTIONS_DIR / pdf_name
+    if not pdf_path.exists():
+        abort(404)
+
+    return send_from_directory(INSTRUCTIONS_DIR, pdf_name)
 
 
 def _parse_numeric(data, key, allow_zero=False):

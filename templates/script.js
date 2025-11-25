@@ -96,6 +96,7 @@ function switchTab(tabId) {
         // Support both source and video toggle buttons. Choose the
         // correct label text depending on the button type.
         const isVideo = toggleBtn.classList.contains('video-toggle');
+        const isInstructions = toggleBtn.classList.contains('instructions-toggle');
         // toggle open state using a CSS class so transitions (opacity/height)
         // can animate. Keep ARIA attributes in sync.
         if (expanded) {
@@ -108,11 +109,17 @@ function switchTab(tabId) {
             toggleBtn.setAttribute('aria-expanded', 'true');
         }
 
+        let collapsedLabel = 'View CLI source code ▾';
+        let expandedLabel = 'View CLI source code ▴';
         if (isVideo) {
-            toggleBtn.innerText = expanded ? 'Watch the video ▾' : 'Watch the video ▴';
-        } else {
-            toggleBtn.innerText = expanded ? 'View CLI source code ▾' : 'View CLI source code ▴';
+            collapsedLabel = 'Watch the video ▾';
+            expandedLabel = 'Watch the video ▴';
+        } else if (isInstructions) {
+            collapsedLabel = 'View module instructions ▾';
+            expandedLabel = 'View module instructions ▴';
         }
+
+        toggleBtn.innerText = expanded ? collapsedLabel : expandedLabel;
     }
 
     const LANGUAGE_MAP = {
@@ -189,12 +196,7 @@ function switchTab(tabId) {
 
     document.addEventListener('click', (e) => {
         const t = e.target;
-        if (t.classList && t.classList.contains('source-toggle')) {
-            togglePanel(t);
-            return;
-        }
-
-        if (t.classList && t.classList.contains('video-toggle')) {
+        if (t.classList && (t.classList.contains('source-toggle') || t.classList.contains('video-toggle') || t.classList.contains('instructions-toggle'))) {
             togglePanel(t);
             return;
         }
@@ -210,7 +212,7 @@ function switchTab(tabId) {
         const target = e.target;
         if (!target) return;
 
-        if (target.classList && (target.classList.contains('source-toggle') || target.classList.contains('video-toggle'))) {
+        if (target.classList && (target.classList.contains('source-toggle') || target.classList.contains('video-toggle') || target.classList.contains('instructions-toggle'))) {
             if (e.key === 'Enter' || e.key === ' ') {
                 e.preventDefault();
                 togglePanel(target);

@@ -256,6 +256,7 @@ async function runModule(id) {
 
 document.addEventListener('DOMContentLoaded', initModule2Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part1Flow);
+document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
 
 (function () {
     const themeToggle = document.getElementById('theme-toggle');
@@ -663,6 +664,211 @@ function initModule2Part1Flow() {
     });
 
     loadScenePreview();
+}
+
+function initModule2Part3Flow() {
+    const form = document.getElementById('module2-part3-form');
+    if (!form) return;
+
+    const thresholdInput = document.getElementById('module2-part3-threshold');
+    const blurInput = document.getElementById('module2-part3-blur');
+    const runBtn = document.getElementById('module2-part3-run-btn');
+    const resetBtn = document.getElementById('module2-part3-reset-btn');
+    const statusLine = document.getElementById('module2-part3-status');
+    const detectionCountEl = document.getElementById('module2-part3-detection-count');
+    const templateCountEl = document.getElementById('module2-part3-template-count');
+    const detectionLog = document.getElementById('module2-part3-detection-log');
+
+    const sceneImg = document.getElementById('module2-part3-scene');
+    const scenePlaceholder = document.getElementById('module2-part3-scene-placeholder');
+    const detectionsImg = document.getElementById('module2-part3-detections');
+    const detectionsPlaceholder = document.getElementById('module2-part3-detections-placeholder');
+    const blurredImg = document.getElementById('module2-part3-blurred');
+    const blurredPlaceholder = document.getElementById('module2-part3-blurred-placeholder');
+
+    const templatesGrid = document.getElementById('module2-part3-templates-grid');
+    const templatesPlaceholder = document.getElementById('module2-part3-templates-placeholder');
+
+    if (!thresholdInput || !blurInput || !runBtn || !resetBtn || !statusLine || !detectionCountEl || !templateCountEl || !detectionLog || !sceneImg || !detectionsImg || !blurredImg || !templatesGrid) {
+        return;
+    }
+
+    let referencesLoaded = false;
+    let hasResults = false;
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const setImageState = (imgEl, placeholderEl, dataUrl) => {
+        if (!imgEl) return;
+        const wrapper = imgEl.closest('.result-image');
+        if (dataUrl) {
+            imgEl.src = dataUrl;
+            imgEl.hidden = false;
+            imgEl.dataset.loaded = 'true';
+            if (wrapper) wrapper.dataset.empty = 'false';
+            if (placeholderEl) placeholderEl.hidden = true;
+        } else {
+            imgEl.removeAttribute('src');
+            imgEl.hidden = true;
+            imgEl.dataset.loaded = 'false';
+            if (wrapper) wrapper.dataset.empty = 'true';
+            if (placeholderEl) placeholderEl.hidden = false;
+        }
+    };
+
+    const formatLabel = (label) => {
+        if (!label) return 'Unknown template';
+        return label.replace(/^template_/i, '').replace(/_/g, ' ').trim() || label;
+    };
+
+    const renderDetections = (detections = []) => {
+        detectionLog.dataset.empty = detections.length ? 'false' : 'true';
+        detectionLog.innerHTML = '';
+        if (!detections.length) {
+            detectionLog.textContent = 'Run the detector to list every match, including correlation scores.';
+            return;
+        }
+
+        detections.forEach((det, index) => {
+            const entry = document.createElement('p');
+            entry.className = 'module2-part3-log__item';
+            const prettyLabel = formatLabel(det.label);
+            const score = Number(det.score).toFixed(2);
+            entry.innerHTML = `<strong>${index + 1}. ${prettyLabel}</strong> – score ${score}`;
+            detectionLog.appendChild(entry);
+        });
+    };
+
+    const renderTemplates = (templates = []) => {
+        templateCountEl.textContent = templates.length;
+        templatesGrid.innerHTML = '';
+        if (!templates.length) {
+            templatesGrid.dataset.empty = 'true';
+            if (templatesPlaceholder) templatesPlaceholder.hidden = false;
+            return;
+        }
+        templatesGrid.dataset.empty = 'false';
+        if (templatesPlaceholder) templatesPlaceholder.hidden = true;
+
+        templates.forEach((tpl) => {
+            const card = document.createElement('figure');
+            card.className = 'template-card';
+
+            const img = document.createElement('img');
+            img.src = tpl.image;
+            img.alt = tpl.filename || 'Template image';
+            img.loading = 'lazy';
+            card.appendChild(img);
+
+            const caption = document.createElement('figcaption');
+            caption.textContent = formatLabel(tpl.label || tpl.filename);
+            card.appendChild(caption);
+
+            templatesGrid.appendChild(card);
+        });
+    };
+
+    const clearResults = () => {
+        hasResults = false;
+        setImageState(detectionsImg, detectionsPlaceholder, null);
+        setImageState(blurredImg, blurredPlaceholder, null);
+        detectionCountEl.textContent = '0';
+        renderDetections([]);
+        resetBtn.disabled = true;
+    };
+
+    const loadReferences = async () => {
+        if (referencesLoaded) return;
+        try {
+            const response = await fetch('/api/a2/part3/references');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to load references.');
+
+            if (data.scene?.image) {
+                setImageState(sceneImg, scenePlaceholder, data.scene.image);
+            }
+            renderTemplates(data.templates || []);
+            setStatus('Reference assets loaded. Set your parameters and run detection.', 'info');
+            referencesLoaded = true;
+        } catch (err) {
+            setStatus(err.message || 'Failed to load Module 2 Part 3 references.', 'error');
+        }
+    };
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const thresholdValue = parseFloat(thresholdInput.value);
+        const blurValue = parseFloat(blurInput.value);
+
+        if (Number.isNaN(thresholdValue) || thresholdValue < 0 || thresholdValue > 1) {
+            setStatus('Please enter a threshold between 0.0 and 1.0.', 'error');
+            return;
+        }
+
+        if (Number.isNaN(blurValue) || blurValue <= 0 || blurValue > 25) {
+            setStatus('Blur multiplier must be between 0.1 and 25.', 'error');
+            return;
+        }
+
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        setStatus('Running multi-template detection…', 'info');
+
+        try {
+            const response = await fetch('/api/a2/part3', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ threshold: thresholdValue, blurMultiplier: blurValue })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Detection failed.');
+
+            detectionCountEl.textContent = data.summary?.detected ?? data.detections?.length ?? 0;
+            if (Number.isFinite(data.summary?.templatesTested)) {
+                templateCountEl.textContent = data.summary.templatesTested;
+            }
+            if (data.detectionsImage) {
+                setImageState(detectionsImg, detectionsPlaceholder, data.detectionsImage);
+            } else {
+                setImageState(detectionsImg, detectionsPlaceholder, null);
+            }
+            if (data.blurredImage) {
+                setImageState(blurredImg, blurredPlaceholder, data.blurredImage);
+            } else {
+                setImageState(blurredImg, blurredPlaceholder, null);
+            }
+            renderDetections(data.detections || []);
+            setStatus(data.message || 'Detection complete.', data.summary?.detected ? 'success' : 'warning');
+            hasResults = true;
+            resetBtn.disabled = false;
+        } catch (err) {
+            clearResults();
+            setStatus(err.message || 'Unexpected error while running detection.', 'error');
+        } finally {
+            runBtn.disabled = false;
+        }
+    });
+
+    resetBtn.addEventListener('click', () => {
+        form.reset();
+        clearResults();
+        setStatus('Outputs cleared. Adjust the parameters and run again.', 'info');
+    });
+
+    registerTabChangeListener((prev, next) => {
+        if (prev === 'a2' && next !== 'a2' && hasResults) {
+            clearResults();
+            setStatus('Outputs cleared after leaving Module 2.', 'info');
+        }
+        if (next === 'a2') {
+            loadReferences();
+        }
+    });
+
+    loadReferences();
 }
 
 function initModule1Flow() {

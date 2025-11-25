@@ -2,13 +2,15 @@ import base64
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
+import cv2
 from flask import Flask, render_template, request, jsonify, send_from_directory, abort
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
 from hwsources.module1 import calculate_focal_length, calculate_real_dimension
-from hwsources.module2_part1 import match_template
+import hwsources.module2_part1 as module2_part1
 from hwsources.module2_part2 import process_image as module2_process_image
+import hwsources.module2_part3 as module2_part3
 
 # Serve static assets from the templates folder so they can be moved
 # from /static into /templates while keeping the same "url_for('static', ...)"
@@ -19,6 +21,7 @@ ALLOWED_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODULE2_PART1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm2'
 MODULE2_PART1_SCENE = MODULE2_PART1_DIR / 'scene.jpg'
+MODULE2_PART3_TEMPLATE_LIMIT = 25
 
 
 def _image_file_to_data_url(path: Path) -> str:
@@ -53,6 +56,21 @@ def _clear_module2_part1_results() -> int:
     return deleted
 
 
+def _image_array_to_data_url(image, ext: str = '.png') -> str:
+    """Encode an OpenCV image (np.ndarray) into a base64 data URL."""
+    encode_ext = ext if ext.startswith('.') else f'.{ext}'
+    mime = 'image/png'
+    if encode_ext.lower() in {'.jpg', '.jpeg'}:
+        mime = 'image/jpeg'
+
+    success, buffer = cv2.imencode(encode_ext, image)
+    if not success:
+        raise ValueError('Failed to encode image buffer for response.')
+
+    encoded = base64.b64encode(buffer.tobytes()).decode('ascii')
+    return f"data:{mime};base64,{encoded}"
+
+
 def _run_module2_part1(threshold: float):
     """Execute template matching for every template_* file and collect results."""
     if not MODULE2_PART1_SCENE.exists():
@@ -74,7 +92,7 @@ def _run_module2_part1(threshold: float):
         )
 
         try:
-            matched = match_template(
+            matched = module2_part1.match_template(
                 scene_path=str(MODULE2_PART1_SCENE),
                 template_path=str(tpl),
                 threshold=threshold,
@@ -118,6 +136,114 @@ def _run_module2_part1(threshold: float):
             'total': len(matches),
         }
     }
+
+
+def _load_module2_part3_references():
+    """Return the static scene preview plus all template thumbnails."""
+    if not MODULE2_PART1_SCENE.exists():
+        raise FileNotFoundError(f"Scene file missing: {MODULE2_PART1_SCENE}")
+
+    template_files = module2_part3.find_template_files(MODULE2_PART1_DIR, limit=MODULE2_PART3_TEMPLATE_LIMIT)
+    if not template_files:
+        raise FileNotFoundError(
+            "No template files found in resources/m2 (expected files starting with 'template_')."
+        )
+
+    templates_payload = []
+    for tpl_path in template_files:
+        try:
+            templates_payload.append({
+                'filename': tpl_path.name,
+                'label': tpl_path.stem,
+                'image': _image_file_to_data_url(tpl_path),
+            })
+        except FileNotFoundError:
+            continue
+
+    return {
+        'scene': {
+            'filename': MODULE2_PART1_SCENE.name,
+            'image': _image_file_to_data_url(MODULE2_PART1_SCENE),
+        },
+        'templates': templates_payload,
+    }
+
+
+def _run_module2_part3(threshold: float, blur_multiplier: float):
+    """Execute the CLI logic from module2_part3 via server-side call."""
+    if not MODULE2_PART1_SCENE.exists():
+        raise FileNotFoundError(f"Scene file missing: {MODULE2_PART1_SCENE}")
+
+    template_files = module2_part3.find_template_files(MODULE2_PART1_DIR, limit=MODULE2_PART3_TEMPLATE_LIMIT)
+    if not template_files:
+        raise FileNotFoundError(
+            "No template files found in resources/m2 (expected files starting with 'template_')."
+        )
+
+    scene = cv2.imread(str(MODULE2_PART1_SCENE))
+    if scene is None:
+        raise ValueError(f"Failed to load scene image: {MODULE2_PART1_SCENE}")
+    scene_gray = cv2.cvtColor(scene, cv2.COLOR_BGR2GRAY)
+
+    all_detections = []
+    skipped_templates = []
+
+    for tpl_path in template_files:
+        tpl = cv2.imread(str(tpl_path))
+        if tpl is None:
+            skipped_templates.append({'filename': tpl_path.name, 'reason': 'unreadable'})
+            continue
+        tpl_gray = cv2.cvtColor(tpl, cv2.COLOR_BGR2GRAY)
+
+        boxes, scores = module2_part3.match_template_once(scene_gray, tpl_gray, threshold=threshold)
+        if not boxes:
+            continue
+
+        keep_idxs = module2_part1.non_max_suppression(boxes, scores, iou_thresh=0.35)
+        for idx in keep_idxs:
+            all_detections.append((boxes[idx], scores[idx], tpl_path.stem))
+
+    drawn = module2_part3.draw_detections(scene, all_detections)
+    boxes_to_blur = [det[0] for det in all_detections]
+    blurred = module2_part3.blur_regions(drawn, boxes_to_blur, blur_multiplier=blur_multiplier)
+
+    detection_payload = [
+        {
+            'label': label,
+            'score': score,
+            'box': {
+                'x1': box[0],
+                'y1': box[1],
+                'x2': box[2],
+                'y2': box[3],
+            }
+        }
+        for (box, score, label) in all_detections
+    ]
+
+    result = {
+        'threshold': threshold,
+        'blurMultiplier': blur_multiplier,
+        'scene': {
+            'filename': MODULE2_PART1_SCENE.name,
+            'image': _image_file_to_data_url(MODULE2_PART1_SCENE),
+        },
+        'detectionsImage': _image_array_to_data_url(drawn),
+        'blurredImage': _image_array_to_data_url(blurred),
+        'detections': detection_payload,
+        'summary': {
+            'detected': len(all_detections),
+            'templatesTested': len(template_files),
+            'skippedTemplates': skipped_templates,
+        }
+    }
+
+    if all_detections:
+        result['message'] = f"Detected {len(all_detections)} region(s) with threshold {threshold:.2f}."
+    else:
+        result['message'] = f"No objects detected at threshold {threshold:.2f}."
+
+    return result
 
 # --- Routes ---
 
@@ -293,6 +419,50 @@ def handle_a2_part2_process():
         return jsonify({'error': 'Uploaded image could not be processed'}), 400
     except Exception as exc:
         return jsonify({'error': f'Processing failed: {exc}'}), 500
+
+
+@app.route('/api/a2/part3/references', methods=['GET'])
+def get_a2_part3_references():
+    try:
+        refs = _load_module2_part3_references()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load references: {exc}'}), 500
+
+    return jsonify(refs)
+
+
+@app.route('/api/a2/part3', methods=['POST'])
+def handle_a2_part3_run():
+    data = request.get_json(silent=True) or {}
+
+    threshold = data.get('threshold', 0.75)
+    blur_multiplier = data.get('blurMultiplier', 2.5)
+
+    try:
+        threshold = float(threshold)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Threshold must be a numeric value between 0.0 and 1.0.'}), 400
+
+    try:
+        blur_multiplier = float(blur_multiplier)
+    except (TypeError, ValueError):
+        return jsonify({'error': 'Blur multiplier must be a positive numeric value.'}), 400
+
+    if not 0.0 <= threshold <= 1.0:
+        return jsonify({'error': 'Threshold must be between 0.0 and 1.0.'}), 400
+    if blur_multiplier <= 0 or blur_multiplier > 25:
+        return jsonify({'error': 'Blur multiplier must be between 0 and 25.'}), 400
+
+    try:
+        results = _run_module2_part3(threshold, blur_multiplier)
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run Module 2 Part 3: {exc}'}), 500
+
+    return jsonify(results)
 
 @app.route('/api/a3', methods=['POST'])
 def handle_a3():

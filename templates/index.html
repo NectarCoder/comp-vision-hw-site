@@ -346,12 +346,73 @@
             <section class="module2-card" id="module2-part3" aria-labelledby="module2-part3-title">
                 <header class="module2-card__header">
                     <div>
-                        <h3 id="module2-part3-title">Part 3 – Additional Frequency Experiments</h3>
-                        <p>Part 3 will host the remaining CLI experiments (e.g., alternate blur removal strategies) once they are ported.</p>
+                        <h3 id="module2-part3-title">Part 3 - Multi-Template Detection &amp; Selective Blur</h3>
+                        <p>Detect all templates inside the fixed scene, then obscure those regions with adjustable blur.</p>
                     </div>
                 </header>
-                <div class="module2-card__body">
-                    <p class="hint">Expect another interactive workflow similar to Part 2. Until then, reference the CLI write-up or source explorer for the in-progress logic.</p>
+                <div class="module2-card__body module2-part3-body">
+                    <div class="module2-part3-grid">
+                        <form id="module2-part3-form" class="module2-part3-form" aria-label="Module 2 Part 3 form">
+                            <div class="field">
+                                <label for="module2-part3-threshold">Detection threshold (0.0 - 1.0)</label>
+                                <input type="number" id="module2-part3-threshold" name="threshold" min="0" max="1" step="0.01" value="0.75" required>
+                                <p class="hint">Adjust the sensitivity of template matching. Higher values reduce false positives but may miss faint matches.</p>
+                            </div>
+                            <div class="field">
+                                <label for="module2-part3-blur">Blur multiplier (0.1 - 25)</label>
+                                <input type="number" id="module2-part3-blur" name="blurMultiplier" min="0.1" max="25" step="0.1" value="2.5" required>
+                                <p class="hint">The multiplier scales both the Gaussian kernel size and sigma before obscuring each detection.</p>
+                            </div>
+                            <div class="module2-actions">
+                                <button type="submit" class="primary-btn" id="module2-part3-run-btn">Run detection</button>
+                                <button type="button" class="subtle-btn" id="module2-part3-reset-btn" disabled>Reset outputs</button>
+                            </div>
+                            <div class="status-line" id="module2-part3-status" data-variant="info">Reference assets will load automatically — adjust the parameters and run whenever you are ready.</div>
+                            <div class="module2-part3-summary" aria-live="polite">
+                                <div>
+                                    <span class="metric-label">Detections found</span>
+                                    <span class="metric-value" id="module2-part3-detection-count">0</span>
+                                </div>
+                                <div>
+                                    <span class="metric-label">Templates tested</span>
+                                    <span class="metric-value" id="module2-part3-template-count">0</span>
+                                </div>
+                            </div>
+                            <div class="module2-part3-log" id="module2-part3-detection-log" data-empty="true">Run the detector to list every match, including its template label and correlation score.</div>
+                        </form>
+                        <div class="module2-part3-visuals" aria-live="polite">
+                            <div class="result-frame">
+                                <h4>Reference Scene</h4>
+                                <div class="result-image" data-empty="true">
+                                    <img id="module2-part3-scene" alt="Scene used for Module 2 Part 3" hidden>
+                                    <p id="module2-part3-scene-placeholder">Scene preview loading…</p>
+                                </div>
+                            </div>
+                            <div class="result-frame">
+                                <h4>Detections Overlay</h4>
+                                <div class="result-image" data-empty="true">
+                                    <img id="module2-part3-detections" alt="Boxes drawn over detected templates" hidden>
+                                    <p id="module2-part3-detections-placeholder">Run detection to see annotated matches.</p>
+                                </div>
+                            </div>
+                            <div class="result-frame">
+                                <h4>Blurred Regions</h4>
+                                <div class="result-image" data-empty="true">
+                                    <img id="module2-part3-blurred" alt="Scene with blurred detections" hidden>
+                                    <p id="module2-part3-blurred-placeholder">Run detection to generate the blurred output.</p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="module2-part3-templates" aria-live="polite">
+                        <div class="module2-part3-templates__header">
+                            <h4>Templates in this experiment</h4>
+                            <p class="hint">Loaded directly from <code>resources/m2/template_*.png</code>.</p>
+                        </div>
+                        <div id="module2-part3-templates-grid" class="template-grid" data-empty="true">
+                            <p id="module2-part3-templates-placeholder">Fetching template thumbnails…</p>
+                        </div>
+                    </div>
                 </div>
             </section>
 
@@ -369,6 +430,7 @@
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part1.py" data-source-path="module2_part1.py">module2_part1.py</button>
                         <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part2.py" data-source-path="module2_part2.py">module2_part2.py</button>
+                        <button class="source-file" role="listitem" data-module="a2" data-filename="module2_part3.py" data-source-path="module2_part3.py">module2_part3.py</button>
                     </div>
                     <pre class="source-code" id="source-code-a2"><code></code></pre>
                 </div>

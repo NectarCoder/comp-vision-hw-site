@@ -8,8 +8,12 @@ from typing import List, Tuple
 import cv2
 import numpy as np
 
-import module2_part1 as m1
-import module2_part2 as m2
+try:
+    from . import module2_part1 as m1
+    from . import module2_part2 as m2
+except ImportError: 
+    import module2_part1 as m1  
+    import module2_part2 as m2 
 
 
 def find_template_files(folder: Path, limit: int = 10) -> List[Path]:

@@ -7,6 +7,7 @@ from flask import Flask, render_template, request, jsonify, send_from_directory,
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
+# Import HW source modules
 from hwsources.module1 import calculate_focal_length, calculate_real_dimension
 import hwsources.module2_part1 as module2_part1
 from hwsources.module2_part2 import process_image as module2_process_image
@@ -23,6 +24,7 @@ MODULE2_PART1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm2'
 MODULE2_PART1_SCENE = MODULE2_PART1_DIR / 'scene.jpg'
 MODULE2_PART3_TEMPLATE_LIMIT = 25
 INSTRUCTIONS_DIR = PROJECT_ROOT / 'hwinstructions'
+MODULE2_PART2_SAMPLE = MODULE2_PART1_DIR / 'tree.jpg'
 
 MODULE_INSTRUCTION_FILES = {
     'a1': 'Assignment1.pdf',
@@ -337,6 +339,22 @@ def module1_calculate_focal_length():
     })
 
 
+@app.route('/api/a2/part2/sample', methods=['GET'])
+def get_a2_part2_sample():
+    """Return the pre-configured sample image as a data URL for the frontend preview."""
+    try:
+        if not MODULE2_PART2_SAMPLE.exists():
+            raise FileNotFoundError(f"Sample image missing at {MODULE2_PART2_SAMPLE}")
+        return jsonify({
+            'filename': MODULE2_PART2_SAMPLE.name,
+            'image': _image_file_to_data_url(MODULE2_PART2_SAMPLE),
+        })
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load sample image: {exc}'}), 500
+
+
 @app.route('/api/a1/real-width', methods=['POST'])
 def module1_calculate_real_width():
     data = request.get_json(silent=True) or {}
@@ -406,14 +424,26 @@ def clear_a2_part1_results():
 
 @app.route('/api/a2/part2', methods=['POST'])
 def handle_a2_part2_process():
-    if 'image' not in request.files:
-        return jsonify({'error': 'No image file provided'}), 400
+    # Support either an uploaded file (multipart/form-data) or a request to use
+    # a pre-configured sample image (form field 'sample' or JSON 'sample').
+    image_file = None
+    sample_name = None
 
-    image_file = request.files['image']
-    if image_file.filename == '':
+    if request.files and 'image' in request.files:
+        image_file = request.files['image']
+    else:
+        # try reading a form field (multipart or standard form)
+        sample_name = (request.form.get('sample') or
+                       (request.get_json(silent=True) or {}).get('sample'))
+    # If using uploaded image, ensure a filename is present
+    if image_file and image_file.filename == '':
         return jsonify({'error': 'Empty filename supplied'}), 400
 
-    filename = secure_filename(image_file.filename) or 'upload.png'
+    if image_file:
+        filename = secure_filename(image_file.filename) or 'upload.png'
+    else:
+        # if we will use a sample, set the filename accordingly for metadata
+        filename = MODULE2_PART2_SAMPLE.name
     suffix = Path(filename).suffix.lower()
     if suffix not in ALLOWED_IMAGE_EXTENSIONS:
         return jsonify({'error': 'Unsupported file type'}), 400
@@ -421,8 +451,19 @@ def handle_a2_part2_process():
     try:
         with TemporaryDirectory() as tmpdir:
             tmp_dir_path = Path(tmpdir)
-            input_path = tmp_dir_path / filename
-            image_file.save(input_path)
+            if image_file:
+                input_path = tmp_dir_path / filename
+                image_file.save(input_path)
+            else:
+                # If sample requested, construct a path to the preconfigured sample
+                # Default to MODULE2_PART2_SAMPLE (tree.jpg) if present, otherwise error
+                if not sample_name:
+                    return jsonify({'error': 'No image file provided and no sample specified'}), 400
+                # for now only 'tree.jpg' is supported; map sample name to path defensively
+                requested_sample = Path(sample_name).name
+                if requested_sample != MODULE2_PART2_SAMPLE.name or not MODULE2_PART2_SAMPLE.exists():
+                    return jsonify({'error': 'Requested sample is not available'}), 400
+                input_path = MODULE2_PART2_SAMPLE
 
             blur_override = tmp_dir_path / f"{input_path.stem}_blurred.png"
             restored_override = tmp_dir_path / f"{input_path.stem}_restored.png"

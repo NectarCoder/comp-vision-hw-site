@@ -336,9 +336,13 @@
                     <form id="module2-part2-form" aria-label="Module 2 Part 2 form" enctype="multipart/form-data">
                         <div class="field">
                             <label class="file-input">
-                                <input type="file" id="module2-image-input" accept="image/*" required>
+                                <input type="file" id="module2-image-input" accept="image/*">
                                 <span>Select an input image</span>
                             </label>
+                            <div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.25rem;">
+                                <input type="checkbox" id="module2-use-sample"> 
+                                <label for="module2-use-sample" style="margin-bottom:0;">Use example image (tree.jpg)</label>
+                            </div>
                         </div>
                         <p class="hint">Supported formats: JPG, PNG, BMP, TIFF. The server reuses the CLI logic that auto scales the blur kernel (~3% of the shorter image side) and sigma.</p>
                         <div class="module2-actions">

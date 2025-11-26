@@ -339,6 +339,7 @@ document.addEventListener('DOMContentLoaded', initModule1Flow);
 function initModule2Flow() {
     const form = document.getElementById('module2-part2-form');
     const fileInput = document.getElementById('module2-image-input');
+    const useSampleCheckbox = document.getElementById('module2-use-sample');
     const runBtn = document.getElementById('module2-run-btn');
     const resetBtn = document.getElementById('module2-reset-btn');
     const statusLine = document.getElementById('module2-part2-status');
@@ -359,7 +360,7 @@ function initModule2Flow() {
         { img: restoredImg, placeholder: restoredPlaceholder, isOriginal: false }
     ];
 
-    const hasFileSelected = () => Boolean(fileInput.files && fileInput.files.length);
+    const hasFileSelected = () => Boolean((fileInput.files && fileInput.files.length) || (useSampleCheckbox && useSampleCheckbox.checked));
     const hasResults = () => resultFrames.some(({ img, isOriginal }) => !isOriginal && img.dataset.loaded === 'true');
 
     const setStatus = (message, variant = 'info') => {
@@ -411,6 +412,14 @@ function initModule2Flow() {
         reader.readAsDataURL(file);
     };
 
+    const showOriginalFromUrl = (dataUrl) => {
+        if (!dataUrl) {
+            clearResults();
+            return;
+        }
+        showImage(originalImg, originalPlaceholder, dataUrl);
+    };
+
     clearResults();
     setStatus('Choose an image to get started.', 'info');
 
@@ -419,7 +428,10 @@ function initModule2Flow() {
         runBtn.disabled = !hasFile;
         resetBtn.disabled = !hasFile && !hasResults();
         if (hasFile) {
-            showOriginal(fileInput.files[0]);
+            // If the source is a file, prefer that preview
+            if (fileInput.files && fileInput.files.length) {
+                showOriginal(fileInput.files[0]);
+            }
             setStatus('Ready to run the process.', 'info');
         } else if (!hasResults()) {
             clearResults();
@@ -427,11 +439,43 @@ function initModule2Flow() {
         }
     });
 
+    if (useSampleCheckbox) {
+        useSampleCheckbox.addEventListener('change', async () => {
+            const checked = useSampleCheckbox.checked;
+            if (checked) {
+                // disable file input
+                fileInput.value = '';
+                fileInput.disabled = true;
+                resetBtn.disabled = false;
+                // fetch the sample preview
+                setStatus('Loading example image preview…', 'info');
+                try {
+                    const resp = await fetch('/api/a2/part2/sample');
+                    const data = await resp.json();
+                    if (!resp.ok) throw new Error(data.error || 'Failed to load sample');
+                    showOriginalFromUrl(data.image);
+                    setStatus(`Using sample ${data.filename}. Ready to run.`, 'info');
+                    runBtn.disabled = false;
+                } catch (err) {
+                    fileInput.disabled = false;
+                    useSampleCheckbox.checked = false;
+                    setStatus(`Could not load sample: ${err.message}`, 'error');
+                }
+            } else {
+                fileInput.disabled = false;
+                clearResults();
+                setStatus('Choose an image to get started.', 'info');
+            }
+        });
+    }
+
     resetBtn.addEventListener('click', () => {
         form.reset();
         clearResults();
         runBtn.disabled = true;
         resetBtn.disabled = true;
+        if (useSampleCheckbox) useSampleCheckbox.checked = false;
+        if (fileInput) fileInput.disabled = false;
         setStatus('Choose an image to get started.', 'info');
     });
 
@@ -443,7 +487,12 @@ function initModule2Flow() {
         }
 
         const formData = new FormData();
-        formData.append('image', fileInput.files[0]);
+        if (useSampleCheckbox && useSampleCheckbox.checked) {
+            // signal server to use the pre-configured sample
+            formData.append('sample', 'tree.jpg');
+        } else {
+            formData.append('image', fileInput.files[0]);
+        }
 
         runBtn.disabled = true;
         resetBtn.disabled = true;

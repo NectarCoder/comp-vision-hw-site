@@ -15,8 +15,8 @@ that were present in the border of the individual images.
 
 Usage:
     1. Images should be named in ascending order (left to right, 1 to 8) and placed together in a folder
-    2. Run the script - python module4_part1.py
-    3. Give the file path of the folder
+    2. Run the script - python module4_part1.py [optional/path/to/images]
+    3. You can pass an absolute path or relative path to the image folder
     4. Script will process the images and stitch them together to create a panorama image
     5. The final result is stored as stitched_result_final.jpg and displayed to the user in a pop up window
 """
@@ -95,13 +95,29 @@ def main():
     print("=== Assignment 4: Final Polished Stitching ===")
     
     # --- 1. Load Images ---
-    relative_img_dir = input("Enter path to image folder: ").strip()
-    script_dir = os.path.dirname(os.path.abspath(__file__))
-    img_dir = os.path.normpath(os.path.join(script_dir, relative_img_dir))
+    # Accept optional cli arg (absolute or relative path), otherwise prompt.
+    if len(sys.argv) > 1:
+        provided_path = sys.argv[1]
+        print(f"Using path from command-line argument: {provided_path}")
+    else:
+        provided_path = input("Enter path to image folder (absolute or relative): ").strip()
+
+    # resolve to an absolute path relative to current working directory
+    provided_path = os.path.expanduser(provided_path)
+    if provided_path == "":
+        # Default to the current working directory if nothing provided
+        provided_path = os.getcwd()
+    img_dir = os.path.abspath(provided_path)
 
     if not os.path.isdir(img_dir):
-        print(f"[ERROR] Directory not found: {img_dir}")
-        return
+        # If not found relative to CWD, also attempt relative to the script directory
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        alt_img_dir = os.path.abspath(os.path.join(script_dir, provided_path))
+        if os.path.isdir(alt_img_dir):
+            img_dir = alt_img_dir
+        else:
+            print(f"[ERROR] Directory not found: {img_dir} (also tried {alt_img_dir})")
+            return
 
     print("Loading images...")
     image_paths = glob.glob(os.path.join(img_dir, "*"))

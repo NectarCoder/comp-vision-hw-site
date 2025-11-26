@@ -108,7 +108,7 @@ def match_template(scene_path: str, template_path: str, threshold: float = 0.8, 
         return False
 
     # Application of non-maximum suppression for removing overlapping detections
-    keep_idxs = non_max_suppression(candidate_boxes, candidate_scores, iou_thresh=0.35)
+    keep_idxs = non_max_suppression(candidate_boxes, candidate_scores, iou_threshold=0.35)
     final_boxes = [candidate_boxes[i] for i in keep_idxs]
     final_scores = [candidate_scores[i] for i in keep_idxs]
 
@@ -149,7 +149,7 @@ def match_template(scene_path: str, template_path: str, threshold: float = 0.8, 
     if draw_all:
         print(f"These many matches were found with threshold set to {threshold} :- {len(final_boxes)}")
     else:
-        print(f"1 best match was found with threshold set to {threshold} :- {final_scores[0]:.2f})")
+        print(f"1 best match was found with threshold set to {threshold} :- {final_scores[0]:.2f}")
     return True
 
 # Main function
@@ -205,7 +205,7 @@ def main() -> None:
             if not found_any:
                 print("No templates were found/processed")
             elif matches_overall:
-                print("These many templates were matched with the scene {scene_path} :- {matched_template_counter}")
+                print(f"These many templates were matched with the scene {scene_path} :- {matched_template_counter}")
             else:
                 print("No templates were matched the scene")
         else:
@@ -217,9 +217,9 @@ def main() -> None:
             try:
                 matched = match_template(scene_path, tpl_arg, threshold=threshold, save_result=True)
                 if matched:
-                    print("Object was detected in the scene {scene_path}")
+                    print(f"Object was detected in the scene {scene_path}")
                 else:
-                    print("Object was not detected in the scene {scene_path}")
+                    print(f"Object was not detected in the scene {scene_path}")
             except Exception as e:
                 print(f"There was an issue :- {e}")
     
@@ -239,9 +239,9 @@ def main() -> None:
         try:
             matched = match_template(scene_path, template_path, threshold=threshold, save_result=True)
             if matched:
-                print("Object was detected in the scene {scene_path}")
+                print(f"Object was detected in the scene {scene_path}")
             else:
-                print("Object was not detected in the scene {scene_path}")
+                print(f"Object was not detected in the scene {scene_path}")
         except Exception as e:
             print(f"There was an issue :- {e}")
 

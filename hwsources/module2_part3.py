@@ -166,7 +166,7 @@ def main() -> None:
             continue
 
         # Remove overlapping detections to get the best matches
-        keep_idxs = m1.non_max_suppression(boxes, scores, iou_thresh=0.35)
+        keep_idxs = m1.non_max_suppression(boxes, scores, iou_threshold=0.35)
         kept_boxes = [boxes[i] for i in keep_idxs]
         kept_scores = [scores[i] for i in keep_idxs]
 

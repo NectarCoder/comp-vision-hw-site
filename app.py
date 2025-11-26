@@ -223,7 +223,7 @@ def _run_module2_part3(threshold: float, blur_multiplier: float):
         if not boxes:
             continue
 
-        keep_idxs = module2_part1.non_max_suppression(boxes, scores, iou_thresh=0.35)
+        keep_idxs = module2_part1.non_max_suppression(boxes, scores, iou_threshold=0.35)
         for idx in keep_idxs:
             all_detections.append((boxes[idx], scores[idx], tpl_path.stem))
 

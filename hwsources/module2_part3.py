@@ -1,63 +1,45 @@
 from __future__ import annotations
-
 import os
 import sys
 from pathlib import Path
 from typing import List, Tuple
-
 import cv2
 import numpy as np
+import module2_part1 as m2_1  
+import module2_part2 as m2_2 
 
-try:
-    from . import module2_part1 as m1
-    from . import module2_part2 as m2
-except ImportError: 
-    import module2_part1 as m1  
-    import module2_part2 as m2 
-
-
+# Given a folder, try to locate up to 10 template image files
 def find_template_files(folder: Path, limit: int = 10) -> List[Path]:
-    # Verify the folder exists and is a directory
-    if not folder.exists() or not folder.is_dir():
-        raise FileNotFoundError(f"Template folder not found: {folder}")
-    # Get and sort all template files, limited to the first 10
-    tpl_files = sorted([folder / f for f in os.listdir(folder) if f.startswith("template_")])
-    return tpl_files[:limit]
+    if not folder.exists() or not folder.is_dir(): raise FileNotFoundError(f"Folder was not found :- {folder}")
+    template_files = sorted([folder / f for f in os.listdir(folder) if f.startswith("template_")])
+    return template_files[:limit]
 
-
+# Template matching function
 def match_template_once(scene_gray: np.ndarray, tpl_gray: np.ndarray, threshold: float = 0.8):
-    # Get template dimensions and scene dimensions
-    th, tw = tpl_gray.shape[:2]
-    sh, sw = scene_gray.shape[:2]
-    # Skip if template is larger than the scene
-    if th > sh or tw > sw:
+    template_height, template_width = tpl_gray.shape[:2]
+    scene_height, scene_width = scene_gray.shape[:2]
+    # If the template is larger than the scene, then we skip the template
+    if template_height > scene_height or template_width > scene_width:
         return [], []
-
-    # Perform template matching to find similarity scores
+    # Template matching (cross correlation)
     res = cv2.matchTemplate(scene_gray, tpl_gray, cv2.TM_CCORR_NORMED)
-    # Find all locations where the score exceeds the threshold
-    y_idxs, x_idxs = np.where(res >= threshold)
-    boxes = []
-    scores = []
-    # Convert pixel coordinates into bounding box format
-    for (y, x) in zip(y_idxs, x_idxs):
-        boxes.append((int(x), int(y), int(x + tw), int(y + th)))
+    y_indices, x_indices = np.where(res >= threshold) # Find all coordinates where score exceeds threshold
+    boxes = [], scores = []
+    # Convert pixel coordinates into outlining box format
+    for (y, x) in zip(y_indices, x_indices):
+        boxes.append((int(x), int(y), int(x + template_width), int(y + template_height)))
         scores.append(float(res[y, x]))
-
-    # Keep only the top candidates to save computation
+    # Only the top-max_candidates are retained for reducing computational cost
     max_candidates = 200
     if len(scores) > max_candidates:
         order = np.argsort(scores)[::-1][:max_candidates]
         boxes = [boxes[i] for i in order]
         scores = [scores[i] for i in order]
-
     return boxes, scores
 
-
+# Draws outlining boxes and labels for each detected object
 def draw_detections(image: np.ndarray, detections: List[Tuple[Tuple[int, int, int, int], float, str]]) -> np.ndarray:
-    # Create a copy of the image to draw on
     out = image.copy()
-    # Draw a green box and label for each detection
     for (box, score, label) in detections:
         x1, y1, x2, y2 = box
         cv2.rectangle(out, (x1, y1), (x2, y2), (0, 200, 0), 2)
@@ -65,74 +47,52 @@ def draw_detections(image: np.ndarray, detections: List[Tuple[Tuple[int, int, in
         cv2.putText(out, text, (x1, max(10, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 200, 0), 2)
     return out
 
-
+# Blurring each region that has been recognized as an object
 def blur_regions(image: np.ndarray, boxes: List[Tuple[int, int, int, int]], blur_multiplier: float = 2.0) -> np.ndarray:
-    # Create a copy of the image to modify
     out = image.copy()
-    # Process each bounding box region to apply blur
+    # Applying blur to each region
     for (x1, y1, x2, y2) in boxes:
-        # Ensure coordinates stay within image bounds
-        x1c, y1c = max(0, x1), max(0, y1)
-        x2c, y2c = min(out.shape[1], x2), min(out.shape[0], y2)
-        # Skip if the region is invalid
-        if x2c <= x1c or y2c <= y1c:
-            continue
-        # Extract the region to be blurred
-        region = out[y1c:y2c, x1c:x2c]
-
-        # Determine the kernel size and sigma based on region dimensions
-        ksize, sigma = m2._resolve_kernel_params(region.shape, None, None)
-
-        # Increase the blur strength by the multiplier factor
+        x1_adjusted, y1_adjusted = max(0, x1), max(0, y1)
+        x2_adjusted, y2_adjusted = min(out.shape[1], x2), min(out.shape[0], y2)
+        if x2_adjusted <= x1_adjusted or y2_adjusted <= y1_adjusted: continue
+        region = out[y1_adjusted:y2_adjusted, x1_adjusted:x2_adjusted] # Region is defined and stored
+        # Calculating the kernel size and sigma value using region dimensions
+        kernel_size, sigma = m2_2._resolve_kernel_params(region.shape, None, None)
         sigma = float(sigma) * float(blur_multiplier)
-        ksize = max(3, int(round(ksize * blur_multiplier)))
-
-        # Ensure kernel size is odd (required by OpenCV)
-        ksize = max(3, ksize)
-        if ksize % 2 == 0:
-            ksize += 1
-
-        # Apply Gaussian blur to the region
-        blurred_region = m2.apply_gaussian_blur(region, ksize, sigma)
-
-        # Place the blurred region back into the output image
-        out[y1c:y2c, x1c:x2c] = blurred_region
-
+        kernel_size = max(3, int(round(kernel_size * blur_multiplier)))
+        if kernel_size % 2 == 0: kernel_size += 1 # Kernel size must be odd for OpenCV
+        # Application of gaussian blur for the region
+        blurred_region = m2_2.apply_gaussian_blur(region, kernel_size, sigma)
+        out[y1_adjusted:y2_adjusted, x1_adjusted:x2_adjusted] = blurred_region
     return out
 
-
+# Main function
 def main() -> None:
-    # Get scene image and templates folder from command line or user input
     if len(sys.argv) == 3:
         scene_arg = sys.argv[1]
-        tpl_folder_arg = sys.argv[2]
+        template_folder_arg = sys.argv[2]
     elif len(sys.argv) == 1:
-        scene_arg = input("Scene file path: ").strip()
-        tpl_folder_arg = input("Templates folder path: ").strip()
+        scene_arg = input("Please enter the file path for scene image :- ").strip()
+        template_folder_arg = input("Please enter the file path for templates folder :- ").strip()
     else:
-        print("Usage: python module2_part3.py <scene_path> <templates_folder>")
-        print("Or run without args to be prompted for paths.")
+        print("Usage :- python module2_part3.py <scene_image_path> <templates_folder_path>")
+        print("Or, run the script without any command line arguments to be prompted for file paths")
         return
 
-    # Convert arguments to Path objects
+    # Conversion of file path strings into Path objects
     scene_path = Path(scene_arg)
-    tpl_folder = Path(tpl_folder_arg)
-
-    # Verify the scene file exists
-    if not scene_path.exists() or not scene_path.is_file():
-        print(f"Scene not found: {scene_path}")
+    template_folder = Path(template_folder_arg)
+    if not scene_path.exists() or not scene_path.is_file(): # Validation of scene image file path
+        print(f"The scene image was not found :- {scene_path}")
         return
 
-    # Get list of template files from the folder
-    try:
-        template_files = find_template_files(tpl_folder, limit=10)
+    try: # Getting the template files from the provided folder (limiting to 10)
+        template_files = find_template_files(template_folder, limit=10)
     except Exception as e:
-        print(f"Error finding templates: {e}")
+        print(f"There was an issue finding the template files :- {e}")
         return
-
-    # Check if any template files were found
-    if not template_files:
-        print(f"No templates found in {tpl_folder} (expecting files starting with 'template_').")
+    if not template_files: # If no template files were found then let user know
+        print(f"There were no template files found in {template_folder} (expecting files starting with 'template_').")
         return
 
     # Load the scene image and convert to grayscale
@@ -166,7 +126,7 @@ def main() -> None:
             continue
 
         # Remove overlapping detections to get the best matches
-        keep_idxs = m1.non_max_suppression(boxes, scores, iou_thresh=0.35)
+        keep_idxs = m2_1.non_max_suppression(boxes, scores, iou_thresh=0.35)
         kept_boxes = [boxes[i] for i in keep_idxs]
         kept_scores = [scores[i] for i in keep_idxs]
 

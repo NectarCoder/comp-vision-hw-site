@@ -188,9 +188,48 @@ function switchTab(tabId) {
 
                 // keep the loaded code visible and scroll to the top
                 codeEl.parentElement.scrollTop = 0;
+
+                // Populate the raw-view and download links in the same source panel
+                try {
+                    const panel = codeEl.closest('.source-panel');
+                    if (panel) {
+                        const viewBtn = panel.querySelector('.view-raw-btn');
+                        const downloadBtn = panel.querySelector('.download-btn');
+                        const rawUrl = `/source/${encodeURI(sourcePath)}`; // preserve path separators
+                        if (viewBtn) {
+                            viewBtn.href = rawUrl;
+                            viewBtn.removeAttribute('aria-disabled');
+                            viewBtn.removeAttribute('hidden');
+                            const toolbar = panel.querySelector('.source-toolbar');
+                            if (toolbar) {
+                                toolbar.removeAttribute('hidden');
+                                toolbar.setAttribute('aria-hidden', 'false');
+                            }
+                        }
+                        if (downloadBtn) {
+                            // Add a query param to force the server to send Content-Disposition
+                            downloadBtn.href = rawUrl + '?download=1';
+                            downloadBtn.removeAttribute('aria-disabled');
+                            downloadBtn.removeAttribute('hidden');
+                        }
+                    }
+                } catch (err) {
+                    // non-fatal; toolbar actions are optional
+                    console.warn('Failed to enable source toolbar', err);
+                }
             })
             .catch(err => {
                 codeEl.textContent = `[Error] Could not load source: ${err.message}`;
+                try {
+                    const panel = codeEl.closest('.source-panel');
+                    if (panel) {
+                        const toolbar = panel.querySelector('.source-toolbar');
+                        if (toolbar) {
+                            toolbar.setAttribute('hidden', '');
+                            toolbar.setAttribute('aria-hidden', 'true');
+                        }
+                    }
+                } catch (err) { /* ignore */ }
             });
     }
 

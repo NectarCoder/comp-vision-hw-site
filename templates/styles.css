@@ -304,6 +304,12 @@ button.run-btn:hover { background-color: var(--primary-hover); }
 .source-code { background: var(--surface); border-radius: 6px; padding: 0.75rem; border: 1px solid var(--border); min-height: 240px; max-height: 520px; overflow:auto; font-family: 'Courier New', monospace; color: var(--text); opacity:0; transform: translateY(-6px); transition: opacity 180ms ease, transform 180ms ease; }
 .source-code code { display:block; white-space: pre; }
 
+/* Simple toolbar for source actions (view raw / download) */
+.source-toolbar { display:flex; gap:0.5rem; align-items:center; margin-bottom:0.75rem; }
+.source-button { display:inline-flex; align-items:center; gap:0.5rem; text-decoration:none; padding:0.45rem 0.75rem; border-radius:8px; border:1px solid var(--border); background:var(--surface); color:var(--text); font-weight:600; }
+.source-button:hover { border-color:var(--primary); color:var(--primary); }
+.source-button[aria-disabled="true"] { pointer-events:none; opacity:0.6; }
+
 /* Improve scrollbars for the code viewer so long files are comfortable */
 .source-code::-webkit-scrollbar { width: 12px; height: 12px; }
 .source-code::-webkit-scrollbar-thumb { background: rgba(37,99,235,0.14); border-radius: 999px; border: 3px solid transparent; background-clip: padding-box; }
@@ -426,6 +432,10 @@ button.run-btn:hover { background-color: var(--primary-hover); }
     border-radius: 999px;
     font-size: 0.85rem;
     line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
 }
 
 .step-card__body {

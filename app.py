@@ -566,7 +566,14 @@ def serve_source(filename):
 
     # deliver the file contents from the hwsources directory
     try:
-        return send_from_directory('hwsources', filename, mimetype='text/plain')
+        # If the query contains a truthy `download` flag, serve the file as an attachment
+        download_flag = request.args.get('download', '').lower()
+        as_attachment = download_flag in ('1', 'true', 'yes', 'on')
+        # Flask's send_from_directory supports `as_attachment` which will set
+        # the Content-Disposition header and prompt a file download in the
+        # user's browser. Still, the UI also uses an HTML anchor with the
+        # download attribute for a direct client-side fallback.
+        return send_from_directory('hwsources', filename, mimetype='text/plain', as_attachment=as_attachment)
     except Exception:
         abort(404)
 

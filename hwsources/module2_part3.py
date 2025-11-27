@@ -28,8 +28,8 @@ from pathlib import Path
 from typing import List, Tuple
 import cv2
 import numpy as np
-import module2_part1 as m2_1  
-import module2_part2 as m2_2 
+import hwsources.module2_part1 as m2_1  
+import hwsources.module2_part2 as m2_2 
 
 # Locate the template files within the provided folder (only 10 template files)
 def find_template_files(folder: Path, limit: int = 10) -> List[Path]:
@@ -47,7 +47,7 @@ def match_template_once(scene_gray: np.ndarray, tpl_gray: np.ndarray, threshold:
     # Template matching (cross correlation)
     res = cv2.matchTemplate(scene_gray, tpl_gray, cv2.TM_CCORR_NORMED)
     y_indices, x_indices = np.where(res >= threshold) # Find all coordinates where score exceeds threshold
-    boxes = [], scores = []
+    boxes, scores = [], []
     # Convert pixel coordinates into outlining box format
     for (y, x) in zip(y_indices, x_indices):
         boxes.append((int(x), int(y), int(x + template_width), int(y + template_height)))
@@ -149,7 +149,7 @@ def main() -> None:
             continue
 
         # Remove overlapping detections to get the best matches
-        keep_idxs = m1.non_max_suppression(boxes, scores, iou_threshold=0.35)
+        keep_idxs = m2_1.non_max_suppression(boxes, scores, iou_threshold=0.35)
         kept_boxes = [boxes[i] for i in keep_idxs]
         kept_scores = [scores[i] for i in keep_idxs]
 

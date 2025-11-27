@@ -286,7 +286,7 @@
                 <header class="module2-card__header">
                     <div>
                         <h3 id="module2-part1-title">Part 1 - Template Matching</h3>
-                        <p>Run the correlation test with a set scene and template object images. No uploads needed - just set the threshold and run.</p>
+                        <p>Run the correlation test with a set scene and template object images. No uploads needed, you can just set the threshold &amp; run.</p>
                     </div>
                 </header>
                 <div class="module2-card__body">
@@ -295,7 +295,7 @@
                             <div class="field">
                                 <label for="module2-part1-threshold">Detection threshold (0.0 - 1.0)</label>
                                 <input type="number" id="module2-part1-threshold" name="threshold" min="0" max="1" step="0.01" value="0.80" required>
-                                <p class="hint">Higher values demand stronger correlation. 0.80 approximates the CLI default.<br>Please note that the match finding process might take a moment - please be patient!</p>
+                                <p class="hint">Higher values demand stronger correlation. We use 0.80 as the default but feel free to change it.<br>Please note that the match finding process might take a moment - please be patient!</p>
                             </div>
                             <div class="module2-actions">
                                 <button type="submit" class="primary-btn" id="module2-part1-run-btn">Test Correlation</button>
@@ -336,11 +336,15 @@
                     <form id="module2-part2-form" aria-label="Module 2 Part 2 form" enctype="multipart/form-data">
                         <div class="field">
                             <label class="file-input">
-                                <input type="file" id="module2-image-input" accept="image/*" required>
+                                <input type="file" id="module2-image-input" accept="image/*">
                                 <span>Select an input image</span>
                             </label>
+                            <div style="display:flex; gap:0.5rem; align-items:center; margin-top:0.25rem;">
+                                <input type="checkbox" id="module2-use-sample"> 
+                                <label for="module2-use-sample" style="margin-bottom:0;">Use example image (tree.jpg)</label>
+                            </div>
                         </div>
-                        <p class="hint">Supported formats: JPG, PNG, BMP, TIFF. The server reuses the CLI logic that auto scales the blur kernel (~3% of the shorter image side) and sigma.</p>
+                        <p class="hint">Supported formats: JPG, PNG, BMP, TIFF. Auto scales the blur kernel (~3% of the shorter image side) &amp; sigma.</p>
                         <div class="module2-actions">
                             <button type="submit" class="primary-btn" id="module2-run-btn" disabled>Run process</button>
                             <button type="button" class="subtle-btn" id="module2-reset-btn" disabled>Reset</button>

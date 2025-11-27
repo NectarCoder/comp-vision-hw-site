@@ -2,9 +2,7 @@
 from __future__ import annotations
 
 import argparse
-import os
 import sys
-import time
 from pathlib import Path
 from typing import Optional, Tuple
 
@@ -69,8 +67,29 @@ def validate_input_path(path: Optional[str]) -> Optional[str]:
 def ensure_writer(output_path: Optional[str], fps: float, w: int, h: int) -> Optional[cv2.VideoWriter]:
     if not output_path:
         return None
-    fourcc = cv2.VideoWriter_fourcc(*"mp4v") if output_path.lower().endswith(".mp4") else cv2.VideoWriter_fourcc(*"XVID")
-    return cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+
+    resolved = str(output_path)
+    suffix = Path(resolved).suffix.lower()
+    if suffix in {".mp4", ".mov", ".m4v"}:
+        codec_candidates = ["avc1", "H264", "mp4v"]
+    elif suffix in {".avi"}:
+        codec_candidates = ["XVID", "mp4v"]
+    else:
+        codec_candidates = ["mp4v"]
+
+    for code in codec_candidates:
+        fourcc = cv2.VideoWriter_fourcc(*code)
+        writer = cv2.VideoWriter(resolved, fourcc, fps, (w, h))
+        if writer and writer.isOpened():
+            print(f"[module5_6_part1] Using codec {code} for output {resolved}")
+            return writer
+        if writer:
+            writer.release()
+            writer = None
+            print(f"[module5_6_part1] Failed to open VideoWriter with codec {code}, trying next candidate…")
+
+    print(f"[module5_6_part1] Could not initialize a VideoWriter for {resolved}.")
+    return None
 
 
 def process_video(input_video: str, output_video: Optional[str] = None, aruco_dict_name: Optional[str] = None, show_window: bool = False, padding: float = 1.0):
@@ -97,6 +116,8 @@ def process_video(input_video: str, output_video: Optional[str] = None, aruco_di
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     writer = ensure_writer(output_video, fps, w, h)
+    if output_video and writer is None:
+        raise RuntimeError(f"Unable to initialize video writer for {output_video}. Please install H.264/MP4 codecs.")
 
     print(f"Processing {'camera' if input_video == 'camera' else input_video}: {w}x{h} @ {fps:.2f} FPS")
     if writer:

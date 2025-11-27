@@ -769,6 +769,15 @@ button.run-btn:hover { background-color: var(--primary-hover); }
     background: #000;
 }
 
+/* Make <video> elements responsive and contained within their wrappers */
+.result-image video {
+    width: 100%;
+    height: auto;
+    max-height: 60vh;
+    object-fit: contain;
+    display: block;
+}
+
 .result-image[data-empty="true"] {
     border-style: dashed;
 }

@@ -1,4 +1,6 @@
 import base64
+import shutil
+import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -10,6 +12,7 @@ from werkzeug.utils import secure_filename
 # Import HW source modules
 from hwsources.module1 import calculate_focal_length, calculate_real_dimension
 import hwsources.module2_part1 as module2_part1
+import hwsources.module5_6_part1 as module5_6
 from hwsources.module2_part2 import process_image as module2_process_image
 import hwsources.module2_part3 as module2_part3
 
@@ -19,6 +22,7 @@ app = Flask(__name__, static_folder='templates', static_url_path='/static')
 CORS(app)  # Enable CORS for all routes
 
 ALLOWED_IMAGE_EXTENSIONS = {'.png', '.jpg', '.jpeg', '.bmp', '.tif', '.tiff'}
+ALLOWED_VIDEO_EXTENSIONS = {'.mp4', '.avi', '.mov', '.mkv', '.webm'}
 PROJECT_ROOT = Path(__file__).resolve().parent
 MODULE2_PART1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm2'
 MODULE2_PART1_SCENE = MODULE2_PART1_DIR / 'scene.jpg'
@@ -26,6 +30,16 @@ MODULE2_PART3_TEMPLATE_LIMIT = 25
 INSTRUCTIONS_DIR = PROJECT_ROOT / 'hwinstructions'
 MODULE2_PART2_SAMPLE = MODULE2_PART1_DIR / 'tree.jpg'
 MODULE1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm1'
+MODULE56_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm5_6'
+MODULE56_SAMPLE = MODULE56_DIR / 'aruco-marker.mp4'
+
+VIDEO_MIME_MAP = {
+    '.mp4': 'video/mp4',
+    '.webm': 'video/webm',
+    '.avi': 'video/x-msvideo',
+    '.mov': 'video/quicktime',
+    '.mkv': 'video/x-matroska',
+}
 
 MODULE_INSTRUCTION_FILES = {
     'a1': 'Assignment1.pdf',
@@ -66,6 +80,44 @@ def _image_file_to_data_url(path: Path) -> str:
     data = path.read_bytes()
     encoded = base64.b64encode(data).decode('ascii')
     return f"data:{mime};base64,{encoded}"
+
+
+def _prepare_video_for_web(path: Path) -> Path:
+    """If ffmpeg is available, transcode the video to H.264 + faststart for browser playback."""
+    ffmpeg_bin = shutil.which('ffmpeg')
+    if not ffmpeg_bin:
+        return path
+
+    temp_output = path.with_name(path.stem + '_web.mp4')
+    cmd = [
+        ffmpeg_bin,
+        '-y',
+        '-i', str(path),
+        '-c:v', 'libx264',
+        '-preset', 'veryfast',
+        '-crf', '23',
+        '-pix_fmt', 'yuv420p',
+        '-movflags', '+faststart',
+        '-an',
+        str(temp_output)
+    ]
+    try:
+        subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        # Replace original file so downstream code continues to reference the same path/name
+        try:
+            path.unlink()
+        except FileNotFoundError:
+            pass
+        temp_output.replace(path)
+    except Exception as exc:
+        # Clean up temp output on failure and fall back to original file
+        if temp_output.exists():
+            try:
+                temp_output.unlink()
+            except OSError:
+                pass
+        print(f"[app] ffmpeg transcode failed ({exc}), using original output.")
+    return path
 
 
 def _clear_module2_part1_results() -> int:
@@ -456,6 +508,105 @@ def module1_calculate_real_width():
         'focalLength': focal_length
     })
 
+
+@app.route('/api/a56/part1/sample', methods=['GET'])
+def get_a56_part1_sample():
+    """Return the pre-configured sample video as a data URL for the frontend preview."""
+    try:
+        if not MODULE56_SAMPLE.exists():
+            raise FileNotFoundError(f"Sample video missing at {MODULE56_SAMPLE}")
+        data = MODULE56_SAMPLE.read_bytes()
+        encoded = base64.b64encode(data).decode('ascii')
+        mime = VIDEO_MIME_MAP.get(MODULE56_SAMPLE.suffix.lower(), 'application/octet-stream')
+        return jsonify({'filename': MODULE56_SAMPLE.name, 'video': f"data:{mime};base64,{encoded}"})
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load sample video: {exc}'}), 500
+
+
+@app.route('/api/a56/part1', methods=['POST'])
+def handle_a56_part1_process():
+    """Accept an uploaded video (multipart/form-data) or a `sample` form field and run the ArUco marker tracker.
+
+    Returns a JSON containing a base64 data URL of the processed output video as `outputVideo`.
+    """
+    try:
+        # multipart upload: input in request.files['video']
+        video_file = None
+        if request.files and 'video' in request.files:
+            video_file = request.files['video']
+            if video_file.filename == '':
+                return jsonify({'error': 'Empty filename supplied'}), 400
+
+        if video_file:
+            filename = secure_filename(video_file.filename) or 'upload.mp4'
+        else:
+            # try JSON or form field sample
+            payload = request.form or (request.get_json(silent=True) or {})
+            sample_name = payload.get('sample') or (request.get_json(silent=True) or {}).get('sample')
+            if not sample_name:
+                return jsonify({'error': 'No video uploaded and no sample specified.'}), 400
+            filename = Path(sample_name).name
+
+        suffix = Path(filename).suffix.lower()
+        if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+            return jsonify({'error': 'Unsupported file type'}), 400
+
+        form_payload = request.form or (request.get_json(silent=True) or {})
+        aruco_dict = form_payload.get('dict')
+        padding = form_payload.get('padding', 1.0)
+        try:
+            padding = float(padding)
+        except Exception:
+            padding = 1.0
+        if padding <= 0 or padding > 10:
+            return jsonify({'error': 'Padding must be between 0 and 10'}), 400
+
+        with TemporaryDirectory() as tmpdir:
+            tmp_dir_path = Path(tmpdir)
+            if video_file:
+                input_path = tmp_dir_path / filename
+                video_file.save(input_path)
+            else:
+                # sample requested
+                requested_sample = Path(filename).name
+                if requested_sample != MODULE56_SAMPLE.name or not MODULE56_SAMPLE.exists():
+                    return jsonify({'error': 'Requested sample is not available'}), 400
+                input_path = MODULE56_SAMPLE
+
+            # Force output to MP4 for browser compatibility if possible
+            output_path = tmp_dir_path / (Path(input_path).stem + '-tracked.mp4')
+
+            try:
+                module5_6.process_video(str(input_path), str(output_path), aruco_dict_name=aruco_dict or None, show_window=False, padding=padding)
+            except Exception as exc:
+                return jsonify({'error': f'Processing failed: {exc}'}), 500
+
+            if not output_path.exists():
+                return jsonify({'error': 'Processing failed to produce an output video.'}), 500
+
+            output_path = _prepare_video_for_web(output_path)
+
+            data = output_path.read_bytes()
+            encoded = base64.b64encode(data).decode('ascii')
+            mime = VIDEO_MIME_MAP.get(output_path.suffix.lower(), 'application/octet-stream')
+            data_url = f"data:{mime};base64,{encoded}"
+
+            return jsonify({
+                'originalFilename': Path(filename).name,
+                'outputFilename': output_path.name,
+                'outputVideo': data_url,
+                'padding': padding,
+                'dict': aruco_dict or None,
+                'message': f'Tracking complete for {Path(filename).name}'
+            })
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run Module 5/6 Part 1: {exc}'}), 500
+
+
 @app.route('/api/a2', methods=['POST'])
 def handle_a2():
     data = request.json
@@ -649,9 +800,8 @@ def handle_a4():
 def handle_a56():
     data = request.json
     user_input = data.get('input', '')
-    
-    # TODO: Connect Module 5 & 6 code
-    response = f"[Stub] Module 5 & 6 complex processing placeholder."
+    # Legacy stub route: inform client to use the part-specific API (Part 1 - tracker)
+    response = "Module 5 & 6 endpoint is deprecated. Use '/api/a56/part1' to upload videos for the tracker."
     return jsonify({'result': response})
 
 @app.route('/api/a7', methods=['POST'])

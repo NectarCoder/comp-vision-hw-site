@@ -335,6 +335,220 @@ document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
 })();
 
 document.addEventListener('DOMContentLoaded', initModule1Flow);
+document.addEventListener('DOMContentLoaded', initModule56Flow);
+
+function initModule56Flow() {
+    const form = document.getElementById('module5-6-part1-form');
+    if (!form) return;
+
+    const fileInput = document.getElementById('module5-6-video-input');
+    const useSampleCheckbox = document.getElementById('module5-6-use-sample');
+    const runBtn = document.getElementById('module5-6-run-btn');
+    const resetBtn = document.getElementById('module5-6-reset-btn');
+    const statusLine = document.getElementById('module5-6-part1-status');
+    const inputVideo = document.getElementById('module5-6-input-video');
+    const inputPlaceholder = document.getElementById('module5-6-input-placeholder');
+    const outputVideo = document.getElementById('module5-6-output-video');
+    const outputPlaceholder = document.getElementById('module5-6-output-placeholder');
+    const dictSelect = document.getElementById('module5-6-dict');
+    const paddingInput = document.getElementById('module5-6-padding');
+
+    if (!fileInput || !runBtn || !resetBtn || !statusLine || !inputVideo || !outputVideo) return;
+
+    let hasResults = false;
+    let createdBlobUrl = null;
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const clearVideoElement = (vidEl, placeholder) => {
+        try {
+            vidEl.pause();
+            vidEl.removeAttribute('src');
+            vidEl.load();
+        } catch (e) { /* ignore invalid states */ }
+        vidEl.hidden = true;
+        if (placeholder) placeholder.hidden = false;
+    };
+
+    const showVideo = (vidEl, placeholder, dataUrlOrBlobUrl) => {
+        if (!dataUrlOrBlobUrl) {
+            clearVideoElement(vidEl, placeholder);
+            return;
+        }
+        // set a proper <source> child so the MIME type can be respected
+        try {
+            // Make sure we clear previous sources
+            Array.from(vidEl.querySelectorAll('source')).forEach(s => s.remove());
+            // clear previous inline src if present
+            try { vidEl.removeAttribute('src'); } catch (e) { /* ignore */ }
+            const srcEl = document.createElement('source');
+            srcEl.src = dataUrlOrBlobUrl;
+            // if this is a data URL, we can extract the mime
+            if (typeof dataUrlOrBlobUrl === 'string' && dataUrlOrBlobUrl.startsWith('data:')) {
+                const mime = dataUrlOrBlobUrl.split(';')[0].replace('data:', '') || 'video/mp4';
+                srcEl.type = mime;
+            }
+            vidEl.appendChild(srcEl);
+        } catch (err) {
+            // fall back to setting src directly
+            try { vidEl.src = dataUrlOrBlobUrl; } catch (_) { /* ignore */ }
+        }
+        vidEl.hidden = false;
+        if (placeholder) placeholder.hidden = true;
+        try { vidEl.load(); } catch (e) { /* ignore */ }
+    };
+
+    const hasSelected = () => Boolean((fileInput.files && fileInput.files.length) || (useSampleCheckbox && useSampleCheckbox.checked));
+
+    fileInput.addEventListener('change', () => {
+        const file = fileInput.files?.[0];
+        if (!file) {
+            runBtn.disabled = !hasSelected();
+            return;
+        }
+        // create a local blob url for preview
+        const url = URL.createObjectURL(file);
+        showVideo(inputVideo, inputPlaceholder, url);
+        runBtn.disabled = false;
+        resetBtn.disabled = false;
+        setStatus('Ready to run the tracker on the selected video.', 'info');
+    });
+
+    if (useSampleCheckbox) {
+        useSampleCheckbox.addEventListener('change', async () => {
+            const checked = useSampleCheckbox.checked;
+            if (checked) {
+                fileInput.value = '';
+                fileInput.disabled = true;
+                runBtn.disabled = false;
+                resetBtn.disabled = false;
+                setStatus('Loading sample video preview…', 'info');
+                try {
+                    const resp = await fetch('/api/a56/part1/sample');
+                    const data = await resp.json();
+                    if (!resp.ok) throw new Error(data.error || 'Failed to load sample');
+                    showVideo(inputVideo, inputPlaceholder, data.video);
+                    setStatus(`Using sample ${data.filename}. Ready to run.`, 'info');
+                } catch (err) {
+                    fileInput.disabled = false;
+                    useSampleCheckbox.checked = false;
+                    setStatus(`Could not load sample: ${err.message}`, 'error');
+                }
+            } else {
+                fileInput.disabled = false;
+                clearVideoElement(inputVideo, inputPlaceholder);
+                runBtn.disabled = true;
+                resetBtn.disabled = true;
+                setStatus('Choose a video to get started.', 'info');
+            }
+        });
+    }
+
+        resetBtn.addEventListener('click', () => {
+        form.reset();
+        clearVideoElement(inputVideo, inputPlaceholder);
+        clearVideoElement(outputVideo, outputPlaceholder);
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        hasResults = false;
+            // hide download link and revoke any created blob url
+            const dlArea = document.getElementById('module5-6-download-area');
+            const dlLink = document.getElementById('module5-6-download-link');
+            if (dlArea) dlArea.style.display = 'none';
+            if (dlLink) dlLink.href = '#';
+            if (createdBlobUrl) {
+                try { URL.revokeObjectURL(createdBlobUrl); } catch (_) { /* ignore */ }
+                createdBlobUrl = null;
+            }
+        setStatus('Choose a video to get started.', 'info');
+    });
+
+    form.addEventListener('submit', async (ev) => {
+        ev.preventDefault();
+        if (!hasSelected()) {
+            setStatus('Please select a video or choose the example video.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        if (useSampleCheckbox && useSampleCheckbox.checked) {
+            formData.append('sample', 'aruco-marker.mp4');
+        } else {
+            formData.append('video', fileInput.files[0]);
+        }
+        formData.append('dict', dictSelect.value);
+        formData.append('padding', paddingInput.value);
+
+        runBtn.disabled = true;
+        setStatus('Uploading video and running the ArUco tracker…', 'info');
+        clearVideoElement(outputVideo, outputPlaceholder);
+        // hide existing download link and revoke any previously created blob
+        const dlArea = document.getElementById('module5-6-download-area');
+        const dlLink = document.getElementById('module5-6-download-link');
+        if (dlArea) dlArea.style.display = 'none';
+        if (dlLink) dlLink.href = '#';
+        if (createdBlobUrl) {
+            try { URL.revokeObjectURL(createdBlobUrl); } catch (_) { /* ignore */ }
+            createdBlobUrl = null;
+        }
+
+        try {
+            const response = await fetch('/api/a56/part1', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Process failed');
+
+            if (data.outputVideo) {
+                // If we received a data URL, convert it to a blob URL for more compatibility
+                try {
+                    let videoUrl = data.outputVideo;
+                        if (typeof videoUrl === 'string' && videoUrl.startsWith('data:')) {
+                        const parts = videoUrl.split(',');
+                        const meta = parts[0];
+                        const base64 = parts[1];
+                        const mimeMatch = meta.match(/data:([^;]+)/);
+                        const mime = mimeMatch ? mimeMatch[1] : 'video/mp4';
+                        const binary = atob(base64);
+                        const len = binary.length;
+                        const u8 = new Uint8Array(len);
+                        for (let i = 0; i < len; i++) u8[i] = binary.charCodeAt(i);
+                        const blob = new Blob([u8], { type: mime });
+                        // revoke a previous blob url if present
+                        if (createdBlobUrl) try { URL.revokeObjectURL(createdBlobUrl); } catch (_) { /* ignore */ }
+                        videoUrl = URL.createObjectURL(blob);
+                        createdBlobUrl = videoUrl;
+                        // show the download link for the blob (create an object URL for download) — we'll reuse videoUrl
+                        const dlArea = document.getElementById('module5-6-download-area');
+                        const dlLink = document.getElementById('module5-6-download-link');
+                        if (dlArea && dlLink) {
+                            dlLink.href = videoUrl;
+                            dlLink.download = data.outputFilename || 'processed.mp4';
+                            dlArea.style.display = 'block';
+                        }
+                    }
+                    showVideo(outputVideo, outputPlaceholder, videoUrl);
+                } catch (err) {
+                    console.warn('Failed to convert data URL to blob; using raw URL fallback', err);
+                    showVideo(outputVideo, outputPlaceholder, data.outputVideo);
+                }
+                setStatus(`Process complete for ${data.originalFilename || 'uploaded video'}.`, 'success');
+                hasResults = true;
+            } else {
+                setStatus('Processing completed but no output video was returned.', 'warning');
+            }
+            resetBtn.disabled = false;
+        } catch (err) {
+            setStatus(err.message || 'Unexpected error occurred.', 'error');
+        } finally {
+            runBtn.disabled = false;
+        }
+    });
+}
 
 /*
  * Global reset button - clears state across modules and UI.
@@ -397,13 +611,39 @@ function initGlobalReset() {
             if (templatesGrid) { templatesGrid.innerHTML = ''; }
         }
 
-        // Clear any run outputs in simple modules (3, 4, 5-6, 7)
+        // Clear any run outputs in simple modules (3, 4, 5-6, 7) and additional UI elements
         ['a3', 'a4', 'a56', 'a7'].forEach((id) => {
             const input = document.getElementById(`input-${id}`);
             const output = document.getElementById(`output-${id}`);
             if (input && 'value' in input) input.value = '';
             if (output && 'textContent' in output) output.textContent = '// Output will appear here...';
         });
+
+        // Also clear Module 5 & 6 specific video inputs and playback elements
+        const m56File = document.getElementById('module5-6-video-input');
+        const m56InVideo = document.getElementById('module5-6-input-video');
+        const m56OutVideo = document.getElementById('module5-6-output-video');
+        const m56InPlaceholder = document.getElementById('module5-6-input-placeholder');
+        const m56OutPlaceholder = document.getElementById('module5-6-output-placeholder');
+        if (m56File) m56File.value = '';
+        if (m56InVideo) {
+            try { m56InVideo.pause(); m56InVideo.removeAttribute('src'); m56InVideo.load(); } catch (e) { /* ignore */ }
+            if (m56InPlaceholder) { m56InPlaceholder.hidden = false; }
+            m56InVideo.hidden = true;
+        }
+        if (m56OutVideo) {
+            try { m56OutVideo.pause(); m56OutVideo.removeAttribute('src'); m56OutVideo.load(); } catch (e) { /* ignore */ }
+            if (m56OutPlaceholder) { m56OutPlaceholder.hidden = false; }
+            m56OutVideo.hidden = true;
+        }
+        // hide download area
+        const m56Download = document.getElementById('module5-6-download-area');
+        if (m56Download) m56Download.style.display = 'none';
+        const m56UseSample = document.getElementById('module5-6-use-sample');
+        if (m56UseSample) {
+            try { m56UseSample.checked = false; } catch (e) { /* ignore */ }
+            try { m56File.disabled = false; } catch (e) { /* ignore */ }
+        }
 
         // Ensure Module 1 inputs are cleared (extra cleanup to cover all cases)
         const refFile = document.getElementById('ref-image-input');

@@ -96,6 +96,15 @@ header {
     gap: 0.5rem;
 }
 
+/* Make the global reset button compact like the theme button */
+.header-controls .subtle-btn {
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: var(--text);
+    background: transparent;
+}
+
 /* Theme toggle button */
 .theme-toggle {
     background: none;
@@ -887,6 +896,23 @@ button.run-btn:hover { background-color: var(--primary-hover); }
     outline: 2px solid var(--primary);
     border-color: transparent;
 }
+
+/* Highlight fields that were autofilled by sample input */
+.field input.autofilled {
+    box-shadow: 0 0 0 4px rgba(34,197,94,0.12);
+    border-color: rgba(34,197,94,0.8);
+}
+
+/* Styling for the module-1 "Use example images" button */
+#module1-use-sample-btn {
+    background: transparent;
+    color: var(--primary);
+    border: 1px solid var(--border);
+    padding: 0.5rem 0.9rem;
+    border-radius: 999px;
+    font-weight: 600;
+}
+#module1-use-sample-btn:hover { border-color: var(--primary); background: var(--surface-hover); }
 
 .primary-btn,
 .subtle-btn {

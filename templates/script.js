@@ -336,6 +336,93 @@ document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
 
 document.addEventListener('DOMContentLoaded', initModule1Flow);
 
+/*
+ * Global reset button - clears state across modules and UI.
+ * Click the existing reset/clear buttons (if available) so module-specific
+ * handlers run, then fall back to explicit form resets and cleanup.
+ */
+function initGlobalReset() {
+    const globalResetBtn = document.getElementById('global-reset-btn');
+    if (!globalResetBtn) return;
+
+    globalResetBtn.addEventListener('click', async () => {
+        const confirmed = confirm('Reset all modules and clear results? This will clear images, points, and outputs across every module.');
+        if (!confirmed) return;
+
+        // Module 1: reuse existing reset handler by clicking the button
+        const m1Reset = document.getElementById('module1-reset');
+        if (m1Reset) try { m1Reset.click(); } catch (err) { /* ignore */ }
+
+        // Module 2 Part 1: clear UI + server results
+        const m2part1Clear = document.getElementById('module2-part1-clear-btn');
+        if (m2part1Clear && !m2part1Clear.disabled) {
+            try { m2part1Clear.click(); } catch (err) { /* ignore */ }
+        } else if (m2part1Clear) {
+            // If the button exists but is disabled, still attempt to clear server-side results
+            try { await fetch('/api/a2/part1/results', { method: 'DELETE' }); } catch (_) { /* ignore errors */ }
+        }
+
+        // Module 2 Part 2: clear form and outputs
+        const m2ResetBtn = document.getElementById('module2-reset-btn');
+        if (m2ResetBtn && !m2ResetBtn.disabled) {
+            try { m2ResetBtn.click(); } catch (err) { /* ignore */ }
+        } else {
+            // fallback to reset the form elements
+            const f2 = document.getElementById('module2-part2-form');
+            if (f2 && typeof f2.reset === 'function') f2.reset();
+            const original = document.getElementById('module2-original-preview');
+            const blurred = document.getElementById('module2-blurred-preview');
+            const restored = document.getElementById('module2-restored-preview');
+            if (original) { original.src = ''; original.hidden = true; }
+            if (blurred) { blurred.src = ''; blurred.hidden = true; }
+            if (restored) { restored.src = ''; restored.hidden = true; }
+        }
+
+        // Module 2 Part 3: clear results
+        const m2part3Reset = document.getElementById('module2-part3-reset-btn');
+        if (m2part3Reset && !m2part3Reset.disabled) {
+            try { m2part3Reset.click(); } catch (err) { /* ignore */ }
+        } else {
+            const f3 = document.getElementById('module2-part3-form');
+            if (f3 && typeof f3.reset === 'function') f3.reset();
+            const detImg = document.getElementById('module2-part3-detections');
+            const blurImg = document.getElementById('module2-part3-blurred');
+            const log = document.getElementById('module2-part3-detection-log');
+            const count = document.getElementById('module2-part3-detection-count');
+            const templatesGrid = document.getElementById('module2-part3-templates-grid');
+            if (detImg) { detImg.src = ''; detImg.hidden = true; }
+            if (blurImg) { blurImg.src = ''; blurImg.hidden = true; }
+            if (log) { log.innerHTML = ''; log.dataset.empty = 'true'; }
+            if (count) { count.textContent = '0'; }
+            if (templatesGrid) { templatesGrid.innerHTML = ''; }
+        }
+
+        // Clear any run outputs in simple modules (3, 4, 5-6, 7)
+        ['a3', 'a4', 'a56', 'a7'].forEach((id) => {
+            const input = document.getElementById(`input-${id}`);
+            const output = document.getElementById(`output-${id}`);
+            if (input && 'value' in input) input.value = '';
+            if (output && 'textContent' in output) output.textContent = '// Output will appear here...';
+        });
+
+        // Ensure Module 1 inputs are cleared (extra cleanup to cover all cases)
+        const refFile = document.getElementById('ref-image-input');
+        const testFile = document.getElementById('test-image-input');
+        if (refFile) refFile.value = '';
+        if (testFile) testFile.value = '';
+        // Remove any 'autofilled' highlights that may remain
+        document.querySelectorAll('.autofilled').forEach(el => el.classList.remove('autofilled'));
+        // reset test expected value hint if present
+        const expectedEl = document.getElementById('test-expected-value');
+        if (expectedEl) expectedEl.textContent = '--';
+
+        // Provide a small visual confirmation in the current tab (call the status areas)
+        try { document.getElementById('ref-status').textContent = 'All modules reset.'; document.getElementById('test-status').textContent = 'All modules reset.'; } catch(e) { }
+    });
+}
+
+document.addEventListener('DOMContentLoaded', initGlobalReset);
+
 function initModule2Flow() {
     const form = document.getElementById('module2-part2-form');
     const fileInput = document.getElementById('module2-image-input');
@@ -1011,6 +1098,9 @@ function initModule1Flow() {
         }
     };
 
+    // new control: Use the sample images provided in resources/m1
+    elements.ref.useSampleBtn = document.getElementById('module1-use-sample-btn');
+
     const MAX_HEIGHT = 800;
     const MAX_WIDTH = 900;
 
@@ -1114,6 +1204,51 @@ function initModule1Flow() {
             img.src = evt.target.result;
         };
         reader.readAsDataURL(file);
+    }
+
+    function loadImageFromDataUrl(kind, dataUrl, filename) {
+        const img = new Image();
+        img.onload = () => {
+            const target = kind === 'reference' ? elements.ref : elements.test;
+            const { displayWidth, displayHeight } = calculateDisplaySize(img);
+
+            const canvas = target.canvas;
+            canvas.width = displayWidth;
+            canvas.height = displayHeight;
+
+            const ctx = target.ctx;
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, displayWidth, displayHeight);
+
+            const bucket = state[kind === 'reference' ? 'reference' : 'test'];
+            bucket.image = img;
+            bucket.meta = {
+                displayWidth,
+                displayHeight,
+                naturalWidth: img.width,
+                naturalHeight: img.height
+            };
+            bucket.points = [];
+            bucket.pixelWidth = null;
+
+            target.wrapper.dataset.state = 'ready';
+            target.empty.textContent = 'Click two points to draw the measurement line.';
+            target.clearBtn.disabled = false;
+            target.resetBtn.disabled = true;
+
+            if (kind === 'reference') {
+                updateStatus('reference', 'Image loaded. Mark the known width.', 'info');
+            } else {
+                updateStatus('test', 'Image loaded. Mark the test object.', 'info');
+                elements.test.distanceInput.disabled = false;
+            }
+
+            updatePixelMetric(kind);
+            checkRefReady();
+            checkTestReady();
+        };
+        img.onerror = () => updateStatus(kind, 'Unable to load that file.', 'error');
+        img.src = dataUrl;
     }
 
     function calculateDisplaySize(img) {
@@ -1379,6 +1514,12 @@ function initModule1Flow() {
         updateStatus('reference', 'Upload a reference image to begin calibration.', 'info');
         updateStatus('test', 'Complete Step 1 to unlock measurement.', 'info');
         updateSummary();
+        // remove autofill indication
+        elements.ref.realWidthInput.classList.remove('autofilled');
+        elements.ref.distanceInput.classList.remove('autofilled');
+        elements.test.distanceInput.classList.remove('autofilled');
+        const expectedEl = document.getElementById('test-expected-value');
+        if (expectedEl) expectedEl.textContent = '--';
     }
 
     function updateSummary() {
@@ -1409,4 +1550,52 @@ function initModule1Flow() {
     }
 
     resetModule();
+
+    // When the 'Use example images' button is clicked, fetch the sample images from server
+    if (elements.ref.useSampleBtn) {
+        elements.ref.useSampleBtn.addEventListener('click', async () => {
+            try {
+                elements.ref.useSampleBtn.disabled = true;
+                updateStatus('reference', 'Loading example images…', 'info');
+                const resp = await fetch('/api/a1/samples');
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load samples');
+
+                if (data.reference?.image) {
+                    loadImageFromDataUrl('reference', data.reference.image, data.reference.filename);
+                }
+                if (data.test?.image) {
+                    loadImageFromDataUrl('test', data.test.image, data.test.filename);
+                }
+
+                // Autofill fields from the measurements file
+                const addAutofilled = (elem, value) => {
+                    if (!elem || typeof value === 'undefined' || value === null) return;
+                    elem.value = value;
+                    elem.classList.add('autofilled');
+                    // remove the autofilled class on user input
+                    const removeAutofill = () => { elem.classList.remove('autofilled'); elem.removeEventListener('input', removeAutofill); };
+                    elem.addEventListener('input', removeAutofill);
+                };
+
+                addAutofilled(elements.ref.realWidthInput, Number.isFinite(data.reference.realWidth) ? data.reference.realWidth : '');
+                addAutofilled(elements.ref.distanceInput, Number.isFinite(data.reference.distance) ? data.reference.distance : '');
+                addAutofilled(elements.test.distanceInput, Number.isFinite(data.test.distance) ? data.test.distance : '');
+
+                // display expected test width if present
+                const expectedEl = document.getElementById('test-expected-value');
+                if (expectedEl) {
+                    expectedEl.textContent = Number.isFinite(data.test.expectedWidth) ? Number(data.test.expectedWidth).toFixed(2) : '--';
+                }
+
+                // allow the test step to be unlocked after focal-length calculation; show test controls
+                updateStatus('reference', 'Example assets loaded. Mark points and calculate focal length.', 'success');
+                elements.ref.useSampleBtn.disabled = false;
+            } catch (err) {
+                elements.ref.useSampleBtn.disabled = false;
+                updateStatus('reference', err.message || 'Failed to load example images', 'error');
+                console.error(err);
+            }
+        });
+    }
 }

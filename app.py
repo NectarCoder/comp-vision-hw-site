@@ -25,6 +25,7 @@ MODULE2_PART1_SCENE = MODULE2_PART1_DIR / 'scene.jpg'
 MODULE2_PART3_TEMPLATE_LIMIT = 25
 INSTRUCTIONS_DIR = PROJECT_ROOT / 'hwinstructions'
 MODULE2_PART2_SAMPLE = MODULE2_PART1_DIR / 'tree.jpg'
+MODULE1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm1'
 
 MODULE_INSTRUCTION_FILES = {
     'a1': 'Assignment1.pdf',
@@ -320,6 +321,73 @@ def _parse_numeric(data, key, allow_zero=False):
     return value
 
 
+def _load_module1_samples():
+    """Load sample images & measurement metadata for Module 1 from resources/m1/.
+    Returns a dict with 'reference' and 'test' keys (filename, image data URL, measurements).
+    """
+    if not MODULE1_DIR.exists():
+        raise FileNotFoundError(f"Module1 resources directory missing: {MODULE1_DIR}")
+
+    ref_path = MODULE1_DIR / 'reference.jpg'
+    test_path = MODULE1_DIR / 'test.jpg'
+    md_path = MODULE1_DIR / 'measurements.md'
+
+    if not ref_path.exists() or not test_path.exists():
+        raise FileNotFoundError("Module 1 reference/test images are missing in resources/m1")
+
+    measurements = {}
+    if md_path.exists():
+        # Very small markdown parser for the table in measurements.md
+        try:
+            text = md_path.read_text(encoding='utf-8')
+            for line in text.splitlines():
+                line = line.strip()
+                if not line or not line.startswith('|'):
+                    continue
+                parts = [p.strip() for p in line.split('|') if p.strip()]
+                if len(parts) != 3:
+                    continue
+                image, metric, value = parts
+                # normalize key by stripping extension
+                key = Path(image).name
+                if key not in measurements:
+                    measurements[key] = {}
+                # unify metric names
+                metric_key = metric.lower().replace(' ', '_')
+                # strip 'cm', markdown '*' and any parenthetical notes; cast to float if possible
+                val_str = value.replace('cm', '').replace('*', '').strip()
+                if '(' in val_str:
+                    val_str = val_str.split('(')[0].strip()
+                try:
+                    val = float(val_str)
+                except Exception:
+                    val = val_str
+                # Normalize metric keys to easier names used in the UI
+                if 'distance' in metric_key:
+                    measurements[key]['distance'] = val
+                elif 'width' in metric_key:
+                    measurements[key]['width'] = val
+                else:
+                    measurements[key][metric_key] = val
+        except Exception:
+            pass
+
+    return {
+        'reference': {
+            'filename': ref_path.name,
+            'image': _image_file_to_data_url(ref_path),
+            'realWidth': measurements.get('reference.jpg', {}).get('width'),
+            'distance': measurements.get('reference.jpg', {}).get('distance')
+        },
+        'test': {
+            'filename': test_path.name,
+            'image': _image_file_to_data_url(test_path),
+            'distance': measurements.get('test.jpg', {}).get('distance'),
+            'expectedWidth': measurements.get('test.jpg', {}).get('width')
+        }
+    }
+
+
 @app.route('/api/a1/focal-length', methods=['POST'])
 def module1_calculate_focal_length():
     data = request.get_json(silent=True) or {}
@@ -337,6 +405,21 @@ def module1_calculate_focal_length():
         'refRealWidth': real_width,
         'refDistance': distance
     })
+
+
+@app.route('/api/a1/samples', methods=['GET'])
+def module1_samples():
+    """Return sample reference & test images plus measurement defaults for Module 1.
+    The images are returned as base64 data URLs to make it easy for the frontend to preview them.
+    """
+    try:
+        data = _load_module1_samples()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load Module 1 samples: {exc}'}), 500
+
+    return jsonify(data)
 
 
 @app.route('/api/a2/part2/sample', methods=['GET'])

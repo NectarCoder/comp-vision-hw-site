@@ -16,6 +16,7 @@
     <header>
         <h1 id="site-title" role="button" tabindex="0" onclick="switchTab('home')" onkeydown="if(event.key==='Enter'||event.key===' ') switchTab('home')">Krishna's Computer Vision Coursework Site</h1>
         <div class="header-controls">
+            <button id="global-reset-btn" class="subtle-btn" title="Reset all modules and clear results">Reset All</button>
             <button id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme" title="Toggle color theme"
                 aria-pressed="true">
                 <span id="theme-icon" aria-hidden="true"></span>
@@ -133,6 +134,7 @@
                                 <span>Choose reference image</span>
                             </label>
                             <button type="button" class="subtle-btn" id="ref-clear-btn" disabled>Clear image</button>
+                            <button type="button" class="subtle-btn" id="module1-use-sample-btn">Use example images</button>
                         </div>
                         <div class="canvas-wrapper" data-state="empty">
                             <canvas id="ref-canvas" class="measure-canvas" role="img" aria-label="Reference image canvas"></canvas>
@@ -192,6 +194,7 @@
                                 <span>Camera distance (cm)</span>
                                 <input type="number" id="test-distance" min="0" step="0.1" placeholder="e.g. 40" disabled>
                             </label>
+                            <div id="test-expected-width" class="hint" style="margin-top:0.4rem;">Expected width: <span id="test-expected-value">--</span> cm</div>
                         </div>
                         <button type="button" class="primary-btn" id="test-calc-btn" disabled>Calculate real-world width</button>
                         <div class="status-line" id="test-status">Complete Step 1 to unlock measurement.</div>

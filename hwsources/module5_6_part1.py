@@ -1,213 +1,263 @@
+#!/usr/bin/env python3
 """
-CSC 8830 Assignment 5-6: Real-Time Object Tracking Suite
-Author: [Your Name]
+Real-time ArUco marker tracker (no AI/ML).
 
-Description:
-    Implements the requirements for Assignment 5-6 Problem 2 & 1(a).
-    
-    Modes:
-    1. 'marker': Real-time tracking using ArUco markers.
-    2. 'markerless': Real-time tracking using OpenCV CSRT (User selects object).
-    3. 'sam2': overlays pre-computed segmentation masks (from NPZ file).
-    4. 'flow': Computes dense optical flow between frames (Problem 1a).
+This script detects ArUco markers in a given video file and draws a green rotated box
+around each detected marker. The marker ID is shown too.
 
 Usage:
-    python assignment5_tracking_suite.py
-    
-Controls:
-    'q' - Quit
-    'm' - Switch to Marker Mode
-    't' - Switch to Marker-less Tracking Mode (Select ROI)
-    's' - Switch to SAM2 Overlay Mode
-    'f' - Capture Motion Estimate (Optical Flow) snapshot
+  python module5_6_part1.py input_video.mp4 [--output out.mp4]
+If no video argument is supplied or the video file doesn't exist, the program prompts
+you for an input path.
 """
+from __future__ import annotations
+
+import argparse
+import os
+import sys
+import time
+from pathlib import Path
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
-import os
 
-# --- Global Constants ---
-ARUCO_DICT_TYPE = cv2.aruco.DICT_4X4_50
-SAM_DATA_FILE = "sam2_masks.npz"
 
-class TrackingApp:
-    def __init__(self):
-        self.cap = cv2.VideoCapture(0) # Use 0 for webcam
-        self.mode = "marker" # Default mode
-        self.tracker = None
-        self.tracking_initialized = False
-        
-        # ArUco setup
-        self.aruco_dict = cv2.aruco.getPredefinedDictionary(ARUCO_DICT_TYPE)
-        self.aruco_params = cv2.aruco.DetectorParameters()
-        
-        # SAM2 Data container
-        self.sam_masks = {}
-        self.frame_count = 0
-        self.load_sam_data()
+def choose_aruco_dictionary(dict_name: Optional[str] = None):
+    """Return an ArUco dictionary object by name or a sensible default.
+    """
+    # Map simple names to the opencv dictionary constants
+    name_map = {
+        None: cv2.aruco.DICT_ARUCO_ORIGINAL,
+        "4x4_50": cv2.aruco.DICT_4X4_50,
+        "5x5_100": cv2.aruco.DICT_5X5_100,
+        "6x6_250": cv2.aruco.DICT_6X6_250,
+        "original": cv2.aruco.DICT_ARUCO_ORIGINAL,
+        "april_36h11": cv2.aruco.DICT_APRILTAG_36h11,
+    }
+    key = dict_name if dict_name in name_map else None
+    return cv2.aruco.getPredefinedDictionary(name_map[key])
 
-    def load_sam_data(self):
-        """ Loads offline segmentation masks for Mode 3 """
-        if os.path.exists(SAM_DATA_FILE):
-            print(f"[INFO] Loading SAM2 data from {SAM_DATA_FILE}...")
-            data = np.load(SAM_DATA_FILE)
-            # Convert npz keys to integer frames
-            self.sam_masks = {int(k.replace('frame_', '')): v for k, v in data.items()}
-            print(f"[INFO] Loaded {len(self.sam_masks)} frames of masks.")
-        else:
-            print(f"[WARNING] {SAM_DATA_FILE} not found. SAM2 mode will show empty overlay.")
-            print("          Run 'generate_dummy_sam_data.py' to create test data.")
 
-    def process_marker_mode(self, frame):
-        """ Mode (i): Uses ArUco markers """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        corners, ids, rejected = cv2.aruco.detectMarkers(gray, self.aruco_dict, parameters=self.aruco_params)
-        
-        vis = frame.copy()
+def detect_markers(frame: np.ndarray, aruco_dict, aruco_params) -> Tuple[np.ndarray, np.ndarray]:
+    """Detect ArUco markers. Returns (corners, ids) as returned by detectMarkers.
+    Corners are a list of four points per marker; ids is the detected marker ID per corners.
+    """
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    corners, ids, _ = cv2.aruco.detectMarkers(gray, aruco_dict, parameters=aruco_params)
+    return corners, ids
+
+
+def rect_from_corners(corners: np.ndarray, padding: float = 1.0) -> Tuple[np.ndarray, Tuple[int, int]]:
+    """Given 4 corners of a marker, return the boxPoints and bounding center (int tuple).
+    corners shape: (4, 1, 2) or (1, 4, 2) depending on detectMarkers format per marker.
+    """
+    # Reshape to Nx2
+    pts = corners.reshape(-1, 2)
+    # compute rotated rectangle
+    rect = cv2.minAreaRect(pts)
+    # Expand rectangle size by padding factor
+    if padding != 1.0:
+        (cx, cy), (w, h), angle = rect
+        rect = ((cx, cy), (w * padding, h * padding), angle)
+    box = cv2.boxPoints(rect).astype(int)
+    center = (int(rect[0][0]), int(rect[0][1]))
+    return box, center
+
+
+
+def draw_marker_box(frame: np.ndarray, box: np.ndarray, marker_id: int) -> None:
+    """Draw a rotated green box and write the marker id label.
+    """
+    # Draw a thick green polyline that wraps around box, close shape
+    cv2.polylines(frame, [box], isClosed=True, color=(0, 255, 0), thickness=3)
+    # Put marker id near top-left corner
+    tl = tuple(box[0])
+    cv2.putText(frame, f"ID:{marker_id}", (tl[0] + 4, tl[1] - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+
+def open_video_capture(path: str):
+    if path == "camera":
+        return cv2.VideoCapture(0)
+    return cv2.VideoCapture(path)
+
+
+def validate_input_path(path: Optional[str]) -> Optional[str]:
+    """Return a valid file path or None if invalid. 'camera' is preserved as a valid special
+    token. This doesn't prompt for input (headless operation only).
+    """
+    if not path:
+        return None
+    if path == "camera":
+        return path
+    p = Path(path)
+    if p.is_file():
+        return str(p)
+    return None
+
+
+def ensure_writer(output_path: Optional[str], fps: float, w: int, h: int) -> Optional[cv2.VideoWriter]:
+    if not output_path:
+        return None
+    fourcc = cv2.VideoWriter_fourcc(*"mp4v") if output_path.lower().endswith(".mp4") else cv2.VideoWriter_fourcc(*"XVID")
+    return cv2.VideoWriter(output_path, fourcc, fps, (w, h))
+
+
+def process_video(input_video: str, output_video: Optional[str] = None, aruco_dict_name: Optional[str] = None, show_window: bool = False, padding: float = 1.0):
+    cap = open_video_capture(input_video)
+    if not cap or not cap.isOpened():
+        print(f"Failed to open input {input_video}")
+        return
+
+    # Prepare ArUco
+    # If 'auto' requested, attempt to find a dictionary that detects a marker in the first
+    # N frames. If no marker is found, fallback to the default.
+    if aruco_dict_name == "auto":
+        aruco_dict = None
+    else:
+        aruco_dict = choose_aruco_dictionary(aruco_dict_name)
+    # DetectorParameters compatibility between OpenCV versions
+    if hasattr(cv2.aruco, "DetectorParameters_create"):
+        aruco_params = cv2.aruco.DetectorParameters_create()
+    else:
+        aruco_params = cv2.aruco.DetectorParameters()
+
+    # If 'auto' dictionary was requested, try to auto-detect by scanning the first frames
+    if aruco_dict is None:
+        # Learn the dictionary by scanning a few frames
+        aruco_dict = auto_detect_dictionary(input_video, max_frames=500)
+        if aruco_dict is None:
+            # fallback to default
+            aruco_dict = choose_aruco_dictionary(None)
+
+    # Prepare writer
+    fps = cap.get(cv2.CAP_PROP_FPS) or 25.0
+    w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    writer = ensure_writer(output_video, fps, w, h)
+
+    print(f"Processing {'camera' if input_video == 'camera' else input_video}: {w}x{h} @ {fps:.2f} FPS")
+    if writer:
+        print(f"Writing output to {output_video}")
+
+    last_center = None
+    last_box = None
+    frames_no_detection = 0
+    MAX_KEEP = 6  # keep showing last known position for a few frames
+
+    while True:
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        corners, ids = detect_markers(frame, aruco_dict, aruco_params)
         if ids is not None:
-            cv2.aruco.drawDetectedMarkers(vis, corners, ids)
-            
-            # Draw tracking info
-            for c in corners:
-                cx = int(np.mean(c[0][:, 0]))
-                cy = int(np.mean(c[0][:, 1]))
-                cv2.circle(vis, (cx, cy), 5, (0, 255, 0), -1)
-                cv2.putText(vis, f"Marker Pos: {cx},{cy}", (cx+10, cy), 
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            ids_flat = ids.flatten()
         else:
-            cv2.putText(vis, "No Marker Detected", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            
-        return vis
+            ids_flat = None
 
-    def process_markerless_mode(self, frame):
-        """ Mode (ii): Uses CSRT Tracker """
-        vis = frame.copy()
-        
-        if not self.tracking_initialized:
-            cv2.putText(vis, "Press SPACE to select Object to Track", (20, 50), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 0, 0), 2)
-            return vis
-            
-        success, box = self.tracker.update(frame)
-        
-        if success:
-            (x, y, w, h) = [int(v) for v in box]
-            cv2.rectangle(vis, (x, y), (x+w, y+h), (0, 255, 0), 2)
-            cv2.putText(vis, "Tracker: Active", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        if ids is not None and len(ids) > 0:
+            # draw the first detected marker and label it; if multiple exist, draw all
+            for i, marker_corners in enumerate(corners):
+                try:
+                    marker_id = int(ids_flat[i]) if ids_flat is not None else -1
+                except Exception:
+                    marker_id = -1
+                box, center = rect_from_corners(marker_corners, padding=padding)
+                last_center = center
+                last_box = box
+                frames_no_detection = 0
+                draw_marker_box(frame, box, marker_id)
         else:
-            cv2.putText(vis, "Tracker: Lost", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-            
-        return vis
+            frames_no_detection += 1
+            if frames_no_detection <= MAX_KEEP and last_box is not None:
+                # show previous
+                cv2.polylines(frame, [last_box], isClosed=True, color=(0, 255, 0), thickness=2)
+                if last_center:
+                    cv2.putText(frame, "(last)", (last_center[0] - 40, last_center[1] - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
 
-    def process_sam2_mode(self, frame):
-        """ Mode (iii): Uses Offline SAM2 Segmentation NPZ """
-        vis = frame.copy()
-        
-        # Simulate frame-sync (using modulo to loop the dummy data)
-        current_idx = self.frame_count % max(1, len(self.sam_masks))
-        
-        if current_idx in self.sam_masks:
-            mask = self.sam_masks[current_idx]
-            # Resize mask if it doesn't match current frame (e.g. if webcam res changed)
-            if mask.shape != frame.shape[:2]:
-                mask = cv2.resize(mask.astype(np.uint8), (frame.shape[1], frame.shape[0]))
-            
-            # Apply colored overlay
-            color_mask = np.zeros_like(frame)
-            color_mask[:, :] = [0, 0, 255] # Red overlay
-            
-            # Blend
-            # mask is boolean or 0/1
-            mask_indices = mask > 0
-            vis[mask_indices] = cv2.addWeighted(vis[mask_indices], 0.6, color_mask[mask_indices], 0.4, 0)
-            
-            cv2.putText(vis, f"SAM2 Overlay: Frame {current_idx}", (20, 50), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
-        else:
-            cv2.putText(vis, "No SAM2 Data", (20, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (100, 100, 100), 2)
-            
-        return vis
+        # Write frame with overlay
+        if writer:
+            writer.write(frame)
+        # No GUI / waiting in headless mode: we simply keep processing. To abort, use process signal.
 
-    def compute_optical_flow(self):
-        """ Problem 1(a): Compute Motion Estimate between 2 frames """
-        print("[INFO] Capturing Frame 1...")
-        ret, frame1 = self.cap.read()
-        if not ret: return
-        prvs = cv2.cvtColor(frame1, cv2.COLOR_BGR2GRAY)
-        
-        print("[INFO] Waiting 200ms for motion...")
-        cv2.waitKey(200) # Wait a bit for motion to happen
-        
-        print("[INFO] Capturing Frame 2...")
-        ret, frame2 = self.cap.read()
-        if not ret: return
-        next_frame = cv2.cvtColor(frame2, cv2.COLOR_BGR2GRAY)
-        
-        # Calculate Dense Flow (Farneback)
-        flow = cv2.calcOpticalFlowFarneback(prvs, next_frame, None, 0.5, 3, 15, 3, 5, 1.2, 0)
-        
-        # Visualize
-        hsv = np.zeros_like(frame1)
-        hsv[..., 1] = 255
-        mag, ang = cv2.cartToPolar(flow[..., 0], flow[..., 1])
-        hsv[..., 0] = ang * 180 / np.pi / 2
-        hsv[..., 2] = cv2.normalize(mag, None, 0, 255, cv2.NORM_MINMAX)
-        rgb = cv2.cvtColor(hsv, cv2.COLOR_HSV2BGR)
-        
-        cv2.imshow("Motion Estimate (Prob 1a)", rgb)
-        print("[INFO] Motion estimate displayed.")
-
-    def run(self):
-        print("=== Object Tracker Started ===")
-        print("Modes: [m]arker, [t]racker (markerless), [s]am2, [f]low snapshot")
-        
-        while True:
-            ret, frame = self.cap.read()
-            if not ret: break
-            
-            self.frame_count += 1
-            
-            # Processing based on mode
-            if self.mode == 'marker':
-                output = self.process_marker_mode(frame)
-            elif self.mode == 'markerless':
-                output = self.process_markerless_mode(frame)
-            elif self.mode == 'sam2':
-                output = self.process_sam2_mode(frame)
-            else:
-                output = frame
-                
-            # UI Text
-            cv2.putText(output, f"Mode: {self.mode.upper()} (Press m/t/s/f)", (10, 20), 
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            
-            cv2.imshow("Tracking Suite", output)
-            
-            key = cv2.waitKey(1) & 0xFF
-            
-            # Controls
-            if key == ord('q'):
-                break
-            elif key == ord('m'):
-                self.mode = 'marker'
-                print("[MODE] Switched to Marker Tracking")
-            elif key == ord('t'):
-                self.mode = 'markerless'
-                print("[MODE] Switched to Markerless Tracking")
-                # Trigger selection
-                bbox = cv2.selectROI("Tracking Suite", frame, fromCenter=False, showCrosshair=True)
-                self.tracker = cv2.TrackerCSRT_create() # CSRT is robust
-                self.tracker.init(frame, bbox)
-                self.tracking_initialized = True
-            elif key == ord('s'):
-                self.mode = 'sam2'
-                print("[MODE] Switched to SAM2 Overlay")
-            elif key == ord('f'):
-                self.compute_optical_flow()
-
-        self.cap.release()
+    cap.release()
+    if writer:
+        writer.release()
+    if show_window:
         cv2.destroyAllWindows()
 
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(description="ArUco marker tracker (no AI/ML)")
+    parser.add_argument("input", nargs="?", help="Path to input video file (or 'camera' for webcam)")
+    parser.add_argument("--output", "-o", help="Path to write annotated output video (optional)")
+    parser.add_argument("--dict", help="Aruco dictionary name (optional) e.g. 4x4_50, 5x5_100")
+    parser.add_argument("--no-window", action='store_true', help='Don\'t show GUI window (headless mode)')
+    parser.add_argument("--padding", type=float, default=1.0, help='Padding factor to enlarge bounding box around the marker (default 1.0)')
+    args = parser.parse_args(argv)
+
+    input_path = args.input
+    # Default to the sample file in resources if args.input is missing and that file exists
+    sample_default = Path("hwsources/resources/m5_6/aruco-marker.mp4")
+    if not input_path and sample_default.is_file():
+        input_path = str(sample_default)
+
+    input_valid = validate_input_path(input_path)
+    if not input_valid:
+        print("Invalid or missing input path. Please pass a valid video file path or 'camera' (no prompting in headless mode).")
+        sys.exit(1)
+    input_path = input_valid
+
+    # Determine default output path if none provided: write to m5_6 folder with '-tracked' suffix
+    if not args.output:
+        in_path = Path(input_path)
+        out_name = in_path.stem + "-tracked" + (".mp4" if in_path.suffix == ".mp4" else in_path.suffix)
+        default_out = in_path.parent / out_name
+        output_path = str(default_out)
+    else:
+        output_path = args.output
+
+    process_video(input_path, output_path, args.dict if args.dict else None, show_window=False, padding=args.padding)
+
+
+def auto_detect_dictionary(video_path: str, max_frames: int = 500):
+    """Try a short scan through the video using several dictionaries and return
+    the dictionary object that finds the first marker.
+    """
+    import cv2
+    try:
+        candidate_names = [
+            "original",
+            "4x4_50",
+            "5x5_100",
+            "6x6_250",
+            "7x7_50",
+            "april_36h11",
+        ]
+        for name in candidate_names:
+            d = choose_aruco_dictionary(name)
+            cap = open_video_capture(video_path)
+            if not cap or not cap.isOpened():
+                continue
+            if hasattr(cv2.aruco, 'DetectorParameters_create'):
+                params = cv2.aruco.DetectorParameters_create()
+            else:
+                params = cv2.aruco.DetectorParameters()
+            found = False
+            for _ in range(max_frames):
+                ret, frame = cap.read()
+                if not ret:
+                    break
+                corners, ids = detect_markers(frame, d, params)
+                if ids is not None and len(ids) > 0:
+                    cap.release()
+                    return d
+            cap.release()
+    except Exception:
+        pass
+    return None
+
+
 if __name__ == "__main__":
-    app = TrackingApp()
-    app.run()
+    main()

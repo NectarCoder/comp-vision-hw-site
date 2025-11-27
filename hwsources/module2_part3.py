@@ -1,3 +1,26 @@
+"""
+CSC 8830 Computer Vision
+Dr. Ashwin Ashok
+Avyuktkrishna Ramasamy
+Module 2 Assignment Part 3 - Object Detection (Template Matching) w/ Selective Region Blurring
+
+The purpose of this script is to find 10 objects (template matching) 
+in a scene image, then blur the object regions. First, the script loads 
+the scene images and folder with 10 template images. Then it iterates 
+through the templates and finds the matches with OpenCV's cross correlation.
+Through the module2_part1.py script, inverse filtering was used for 
+eliminating overlapping boxes. The picture is displayed with the boxes 
+surrounding each of the detected objects. Then with help from module2_part2.py 
+the Gaussian blur is applied to each detected objetct's region.
+
+Usage:
+ - Run the script - python module2_part3.py
+ - When prompted, enter the scene image's file path and template image folder's path
+ - Results are displayed to user
+
+The dependencies for the script are opencv-python, numpy, and the other module2 scripts
+"""
+
 from __future__ import annotations
 import os
 import sys
@@ -8,13 +31,13 @@ import numpy as np
 import module2_part1 as m2_1  
 import module2_part2 as m2_2 
 
-# Given a folder, try to locate up to 10 template image files
+# Locate the template files within the provided folder (only 10 template files)
 def find_template_files(folder: Path, limit: int = 10) -> List[Path]:
     if not folder.exists() or not folder.is_dir(): raise FileNotFoundError(f"Folder was not found :- {folder}")
     template_files = sorted([folder / f for f in os.listdir(folder) if f.startswith("template_")])
     return template_files[:limit]
 
-# Template matching function
+# Functionality for matching the 
 def match_template_once(scene_gray: np.ndarray, tpl_gray: np.ndarray, threshold: float = 0.8):
     template_height, template_width = tpl_gray.shape[:2]
     scene_height, scene_width = scene_gray.shape[:2]

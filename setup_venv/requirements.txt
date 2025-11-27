@@ -4,17 +4,17 @@ flask-cors
 
 # image/video processing
 numpy
-opencv-contrib-python-headless>  # or opencv-contrib-python for GUI/dev
+opencv-contrib-python-headless  # or opencv-contrib-python for GUI/dev
 
 # plotting
 matplotlib
 pillow
 
 # optional ML/vision
-mediapipe>=0.10.18
+mediapipe
 # jax + jaxlib are optional for SAM2 model usage:
 # jax>=0.7.1
 # jaxlib>=0.7.1
 
 # development
-pytest>=9.0.1
+pytest

@@ -86,6 +86,42 @@ function switchTab(tabId) {
 
 /* ---------- Source explorer (collapsed panels) ---------- */
 (function () {
+    const sourcePanelsInitialized = new Set();
+
+    function moduleIdFromPanel(panel) {
+        if (!panel) return null;
+        if (panel.dataset.module) return panel.dataset.module;
+        if (panel.id && panel.id.startsWith('source-panel-')) {
+            return panel.id.replace('source-panel-', '');
+        }
+        return null;
+    }
+
+    function setActiveSourceButton(moduleId, activeBtn) {
+        if (!moduleId) return;
+        const buttons = document.querySelectorAll(`.source-file[data-module="${moduleId}"]`);
+        buttons.forEach((btn) => {
+            const isActive = btn === activeBtn;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', String(isActive));
+            if (isActive) {
+                btn.setAttribute('aria-current', 'true');
+            } else {
+                btn.removeAttribute('aria-current');
+            }
+        });
+    }
+
+    function maybeLoadDefaultSource(panel) {
+        if (!panel || !panel.classList.contains('source-panel')) return;
+        const moduleId = moduleIdFromPanel(panel);
+        if (!moduleId || sourcePanelsInitialized.has(moduleId)) return;
+        const firstBtn = panel.querySelector('.source-file');
+        if (!firstBtn) return;
+        sourcePanelsInitialized.add(moduleId);
+        handleFileSelection(firstBtn, { scrollIntoView: false });
+    }
+
     function togglePanel(toggleBtn) {
         const panelId = toggleBtn.getAttribute('aria-controls');
         const panel = document.getElementById(panelId);
@@ -107,6 +143,9 @@ function switchTab(tabId) {
             panel.classList.add('open');
             panel.setAttribute('aria-hidden', 'false');
             toggleBtn.setAttribute('aria-expanded', 'true');
+            if (panel && panel.classList.contains('source-panel')) {
+                maybeLoadDefaultSource(panel);
+            }
         }
 
         let collapsedLabel = 'View CLI source code ▾';
@@ -135,22 +174,31 @@ function switchTab(tabId) {
             .forEach(cls => el.classList.remove(cls));
     }
 
-    function handleFileSelection(btn) {
+    function handleFileSelection(btn, options = {}) {
         // Fetch the file from /source/<filename> and load it into the code pane.
-        const moduleId = btn.dataset.module; // e.g. "a1"
+        if (!btn) return;
+        const moduleId = btn.dataset ? btn.dataset.module : null; // e.g. "a1"
+        if (!moduleId) return;
         const codeEl = document.querySelector(`#source-code-${moduleId} code`);
         if (!codeEl) return;
+
+        const { scrollIntoView = true } = options || {};
 
         const sourcePath = btn.dataset.sourcePath;
         if (!sourcePath) {
             codeEl.textContent = '[Error] No source path configured for this file.';
+            setActiveSourceButton(moduleId, btn);
             return;
         }
+
+        setActiveSourceButton(moduleId, btn);
 
         // Visual loading state
         cleanupLanguageClasses(codeEl);
         codeEl.textContent = 'Loading source…';
-        codeEl.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (scrollIntoView && codeEl.parentElement) {
+            codeEl.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
 
         fetch(`/source/${encodeURIComponent(sourcePath)}`)
             .then(resp => {
@@ -196,6 +244,7 @@ function switchTab(tabId) {
                         const viewBtn = panel.querySelector('.view-raw-btn');
                         const downloadBtn = panel.querySelector('.download-btn');
                         const rawUrl = `/source/${encodeURI(sourcePath)}`; // preserve path separators
+                        const fileLabel = btn.dataset.filename || sourcePath.split('/').pop() || sourcePath;
                         if (viewBtn) {
                             viewBtn.href = rawUrl;
                             viewBtn.removeAttribute('aria-disabled');
@@ -209,6 +258,7 @@ function switchTab(tabId) {
                         if (downloadBtn) {
                             // Add a query param to force the server to send Content-Disposition
                             downloadBtn.href = rawUrl + '?download=1';
+                            downloadBtn.setAttribute('download', fileLabel);
                             downloadBtn.removeAttribute('aria-disabled');
                             downloadBtn.removeAttribute('hidden');
                         }

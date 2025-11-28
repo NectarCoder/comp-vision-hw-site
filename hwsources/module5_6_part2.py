@@ -143,6 +143,27 @@ def _mask_to_box(mask: np.ndarray) -> Optional[np.ndarray]:
     return np.array([x0, y0, x1, y1], dtype=np.float32)
 
 
+def _choose_segment(segments, confidences, frame_area: int, target_ratio: float, min_ratio: float, max_ratio: float):
+    choice = None
+    best_score = float("-inf")
+    for seg, conf in zip(segments, confidences):
+        area = float(seg.sum())
+        if not area or not frame_area:
+            continue
+        ratio = area / frame_area
+        penalty = 0.0
+        if ratio < min_ratio:
+            penalty = min_ratio - ratio
+        elif ratio > max_ratio:
+            penalty = ratio - max_ratio
+        distance = abs(ratio - target_ratio)
+        score = conf - distance - penalty
+        if score > best_score:
+            best_score = score
+            choice = (seg, ratio, conf)
+    return choice
+
+
 def generate_masks_with_sam(video_path: str, device: str = "cpu", resize_scale: float = 1.0, checkpoint: Optional[str] = None):
     try:
         from segment_anything import SamAutomaticMaskGenerator, SamPredictor
@@ -159,13 +180,17 @@ def generate_masks_with_sam(video_path: str, device: str = "cpu", resize_scale: 
         raise RuntimeError(f"Failed to open input {video_path}")
 
     MIN_AREA_RATIO = 0.002
+    MAX_AREA_RATIO = 0.45
     MIN_CONFIDENCE = 0.35
     MIN_IOU = 0.2
     MAX_TRACK_GAP = 5
+    AREA_SIMILARITY = 0.12
+    INITIAL_TARGET_RATIO = 0.08
 
     masks = []
     processed = 0
     last_mask_small: Optional[np.ndarray] = None
+    last_area_ratio: Optional[float] = None
     miss_counter = 0
 
     while True:
@@ -179,7 +204,7 @@ def generate_masks_with_sam(video_path: str, device: str = "cpu", resize_scale: 
 
         candidate_mask: Optional[np.ndarray] = None
         candidate_score = 0.0
-        candidate_area = 0.0
+        candidate_ratio = 0.0
 
         if last_mask_small is not None:
             box = _mask_to_box(last_mask_small)
@@ -188,7 +213,7 @@ def generate_masks_with_sam(video_path: str, device: str = "cpu", resize_scale: 
                     masks_pred, scores_pred, _ = predictor.predict(box=box[None, :], point_coords=None, point_labels=None, multimask_output=False)
                     candidate_mask = masks_pred[0].astype(bool)
                     candidate_score = float(scores_pred[0])
-                    candidate_area = float(candidate_mask.sum())
+                    candidate_ratio = float(candidate_mask.sum()) / (small_frame.shape[0] * small_frame.shape[1]) if small_frame.size else 0.0
                 except Exception:
                     candidate_mask = None
 
@@ -200,17 +225,20 @@ def generate_masks_with_sam(video_path: str, device: str = "cpu", resize_scale: 
                 masks_data = []
             if masks_data:
                 segments = [entry["segmentation"].astype(bool) for entry in masks_data]
-                areas = [seg.sum() for seg in segments]
                 confidences = [float(entry.get("predicted_iou", entry.get("stability_score", 1.0))) for entry in masks_data]
-                idx = int(np.argmax(areas))
-                candidate_mask = segments[idx]
-                candidate_area = float(areas[idx])
-                candidate_score = confidences[idx]
-                miss_counter = 0
+                frame_area = small_frame.shape[0] * small_frame.shape[1]
+                target_ratio = last_area_ratio if last_area_ratio is not None else INITIAL_TARGET_RATIO
+                choice = _choose_segment(segments, confidences, frame_area, target_ratio, MIN_AREA_RATIO, MAX_AREA_RATIO)
+                if choice is not None:
+                    candidate_mask, candidate_ratio, candidate_score = choice
+                    miss_counter = 0
 
         frame_area = small_frame.shape[0] * small_frame.shape[1]
-        area_ratio = (candidate_area / frame_area) if frame_area and candidate_mask is not None else 0.0
-        meets_area = area_ratio >= MIN_AREA_RATIO
+        if candidate_mask is not None and frame_area:
+            candidate_ratio = float(candidate_mask.sum()) / frame_area
+        meets_area = candidate_mask is not None and MIN_AREA_RATIO <= candidate_ratio <= MAX_AREA_RATIO
+        if last_area_ratio is not None and candidate_mask is not None:
+            meets_area = meets_area and abs(candidate_ratio - last_area_ratio) <= AREA_SIMILARITY
         meets_conf = candidate_score >= MIN_CONFIDENCE
         meets_iou = True
         if candidate_mask is not None and last_mask_small is not None:
@@ -230,9 +258,11 @@ def generate_masks_with_sam(video_path: str, device: str = "cpu", resize_scale: 
             miss_counter += 1
             if miss_counter >= MAX_TRACK_GAP:
                 last_mask_small = None
+                last_area_ratio = None
 
         if stable_small.any():
             last_mask_small = stable_small.copy()
+            last_area_ratio = float(last_mask_small.sum()) / (small_frame.shape[0] * small_frame.shape[1]) if small_frame.size else None
 
         mask_full = _match_mask_to_frame(stable_small, frame.shape[:2])
         masks.append(mask_full.astype(np.uint8))
@@ -253,13 +283,9 @@ def main(argv=None):
     parser.add_argument("--no-window", action='store_true', help='Don\'t show GUI window (headless mode)')
     parser.add_argument("--resize", type=float, default=1.0, help="Scale frames for segmentation (0.0-1.0)")
     parser.add_argument("--checkpoint", type=str, default=None, help="Path to SAM checkpoint (overrides env var)")
-    # Note: output NPZ and output video are automatically derived from the input path: <stem>-masks.npz and <stem>-tracked.mp4
     args = parser.parse_args(argv)
 
     input_path = args.input
-    sample_default = Path("hwsources/resources/m5_6/aruco-marker.mp4")
-    if not input_path and sample_default.is_file():
-        input_path = str(sample_default)
 
     if not (0.0 < args.resize <= 1.0):
         print("--resize must be within (0.0, 1.0].")
@@ -280,7 +306,6 @@ def main(argv=None):
     w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     cap.release()
-    # Build default output paths
     in_path = Path(input_path)
     default_masks = in_path.with_name(in_path.stem + "-masks.npz")
     default_out = in_path.with_name(in_path.stem + "-tracked.mp4")

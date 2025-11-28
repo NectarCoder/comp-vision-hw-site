@@ -5,7 +5,8 @@ from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import cv2
-from flask import Flask, render_template, request, jsonify, send_from_directory, abort
+import numpy as np
+from flask import Flask, render_template, request, jsonify, send_from_directory, abort, url_for
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -32,6 +33,8 @@ MODULE2_PART2_SAMPLE = MODULE2_PART1_DIR / 'tree.jpg'
 MODULE1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm1'
 MODULE56_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm5_6'
 MODULE56_SAMPLE = MODULE56_DIR / 'aruco-marker.mp4'
+MODULE56_PART2_VIDEO = MODULE56_DIR / 'iphone-moving.mp4'
+MODULE56_PART2_MASKS = MODULE56_DIR / 'iphone-moving-masks.npz'
 
 VIDEO_MIME_MAP = {
     '.mp4': 'video/mp4',
@@ -148,6 +151,115 @@ def _image_array_to_data_url(image, ext: str = '.png') -> str:
 
     encoded = base64.b64encode(buffer.tobytes()).decode('ascii')
     return f"data:{mime};base64,{encoded}"
+
+
+_module56_part2_cache = None
+
+
+def _load_module56_part2_assets():
+    """Load the precomputed SAM2 masks and derive bounding boxes for each frame."""
+    global _module56_part2_cache
+    if _module56_part2_cache is not None:
+        return _module56_part2_cache
+
+    if not MODULE56_PART2_VIDEO.exists():
+        raise FileNotFoundError(f"Part 2 video missing at {MODULE56_PART2_VIDEO}")
+    if not MODULE56_PART2_MASKS.exists():
+        raise FileNotFoundError(f"Mask data missing at {MODULE56_PART2_MASKS}")
+
+    try:
+        with np.load(MODULE56_PART2_MASKS) as data:
+            if 'masks' not in data:
+                raise ValueError('Mask file does not contain a "masks" array')
+            masks = data['masks']
+    except Exception as exc:
+        raise RuntimeError(f'Failed to load SAM2 mask data: {exc}') from exc
+
+    if masks.ndim < 3:
+        raise ValueError('Unexpected mask array shape; expected (frames, height, width).')
+
+    frame_count_masks = int(masks.shape[0])
+    mask_height = int(masks.shape[1])
+    mask_width = int(masks.shape[2]) if masks.ndim >= 3 else int(masks.shape[1])
+    frame_height = mask_height
+    frame_width = mask_width
+
+    boxes = []
+    for idx in range(frame_count_masks):
+        mask = masks[idx]
+        if mask.ndim == 3:
+            mask = mask[..., 0]
+        mask_bool = mask.astype(bool)
+        entry = {'frame': idx, 'box': None}
+        if mask_bool.any():
+            ys, xs = np.where(mask_bool)
+            x1 = int(xs.min())
+            x2 = int(xs.max()) + 1  # treat as exclusive bounds for drawing convenience
+            y1 = int(ys.min())
+            y2 = int(ys.max()) + 1
+            entry['box'] = [x1, y1, x2, y2]
+            entry['normalized'] = {
+                'x1': x1 / mask_width if mask_width else 0.0,
+                'y1': y1 / mask_height if mask_height else 0.0,
+                'x2': x2 / mask_width if mask_width else 0.0,
+                'y2': y2 / mask_height if mask_height else 0.0,
+            }
+            entry['area'] = int((x2 - x1) * (y2 - y1))
+        boxes.append(entry)
+
+    fps = 30.0
+    frame_count_video = frame_count_masks
+    cap = cv2.VideoCapture(str(MODULE56_PART2_VIDEO))
+    if cap is not None and cap.isOpened():
+        fps_read = cap.get(cv2.CAP_PROP_FPS)
+        if fps_read:
+            fps = float(fps_read)
+        width_read = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        height_read = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        if width_read:
+            frame_width = int(width_read)
+        if height_read:
+            frame_height = int(height_read)
+        count_read = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        if count_read:
+            frame_count_video = int(count_read)
+        cap.release()
+    else:
+        try:
+            cap.release()
+        except Exception:
+            pass
+
+    duration_seconds = frame_count_video / fps if fps else None
+
+    if mask_width and mask_height and frame_width and frame_height:
+        for entry in boxes:
+            norm = entry.get('normalized') or None
+            if not norm:
+                entry['box'] = None
+                entry['area'] = 0
+                continue
+            x1 = int(round(norm['x1'] * frame_width))
+            y1 = int(round(norm['y1'] * frame_height))
+            x2 = int(round(norm['x2'] * frame_width))
+            y2 = int(round(norm['y2'] * frame_height))
+            x1, x2 = max(0, x1), max(0, x2)
+            y1, y2 = max(0, y1), max(0, y2)
+            entry['box'] = [x1, y1, x2, y2]
+            entry['area'] = int(max(0, x2 - x1) * max(0, y2 - y1))
+
+    _module56_part2_cache = {
+        'videoFilename': MODULE56_PART2_VIDEO.name,
+        'frameWidth': frame_width,
+        'frameHeight': frame_height,
+        'fps': float(round(fps, 4)),
+        'frameCount': frame_count_video,
+        'maskFrameCount': frame_count_masks,
+        'durationSeconds': float(round(duration_seconds, 4)) if duration_seconds else None,
+        'maskFilename': MODULE56_PART2_MASKS.name,
+        'boxes': boxes,
+    }
+    return _module56_part2_cache
 
 
 def _run_module2_part1(threshold: float):
@@ -357,6 +469,19 @@ def module_instructions(module_id: str):
     return send_from_directory(INSTRUCTIONS_DIR, pdf_name)
 
 
+@app.route('/media/m56/<path:filename>')
+def serve_module56_media(filename):
+    """Serve whitelisted Module 5 & 6 media assets (videos, mask archives)."""
+    if not filename or '..' in filename:
+        abort(404)
+    safe_name = Path(filename).name
+    target_path = MODULE56_DIR / safe_name
+    if not target_path.exists():
+        abort(404)
+    mimetype = VIDEO_MIME_MAP.get(target_path.suffix.lower())
+    return send_from_directory(str(MODULE56_DIR), safe_name, mimetype=mimetype)
+
+
 def _parse_numeric(data, key, allow_zero=False):
     """Try to coerce JSON field `key` into float, raising ValueError on failure."""
     if key not in data:
@@ -523,6 +648,25 @@ def get_a56_part1_sample():
         return jsonify({'error': str(exc)}), 404
     except Exception as exc:
         return jsonify({'error': f'Failed to load sample video: {exc}'}), 500
+
+
+@app.route('/api/a56/part2/assets', methods=['GET'])
+def get_a56_part2_assets():
+    """Return metadata + bounding boxes for the fixed SAM2 showcase video."""
+    try:
+        payload = _load_module56_part2_assets()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 500
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load Module 5/6 Part 2 assets: {exc}'}), 500
+
+    response = dict(payload)
+    response['videoUrl'] = url_for('serve_module56_media', filename=payload['videoFilename'])
+    return jsonify(response)
 
 
 @app.route('/api/a56/part1', methods=['POST'])

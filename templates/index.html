@@ -656,12 +656,59 @@
             <section class="module2-card" id="module5-6-part2" aria-labelledby="module5-6-part2-title">
                 <header class="module2-card__header">
                     <div>
-                        <h3 id="module5-6-part2-title">Part 2 - Placeholder</h3>
-                        <p>Leave this area blank for now; nothing to run here yet.</p>
+                        <h3 id="module5-6-part2-title">Part 2 - Markerless Tracker Showcase</h3>
+                        <p>Visualize SAM2 (ViT-H) segmentation output by replaying original iPhone tracking video, alongside the bounding box overlay derived from the exported NPZ file.</p>
+                        <p class="hint" style="margin-top:0.25rem">Note: This is a view-only demo. Segmentation was run offline, and the website streams the fixed video/mask pair so you can view each detection.</p>
                     </div>
                 </header>
-                <div class="module2-card__body">
-                    <div class="hint">Module 5 & 6 Part 2 UI will be added here later.</div>
+                <div class="module2-card__body module56-part2-body">
+                    <div class="module56-part2-overview">
+                        <p>The SAM2 tracker was executed on an RTX 4090 using the ViT-H SAM2 model. The resulting bounding array dimensions are bundled in <code>iphone-moving-masks.npz</code>; each frame is converted to a bounding box in Flask and animated client-side.</p>
+                        <ul class="module56-part2-metrics">
+                            <li>
+                                <span class="metric-label">Frames (mask/video)</span>
+                                <span class="metric-value" id="module5-6-part2-metric-frames">-- / --</span>
+                            </li>
+                            <li>
+                                <span class="metric-label">Resolution</span>
+                                <span class="metric-value" id="module5-6-part2-metric-resolution">-- × --</span>
+                            </li>
+                            <li>
+                                <span class="metric-label">Frame rate</span>
+                                <span class="metric-value" id="module5-6-part2-metric-fps">-- fps</span>
+                            </li>
+                            <li>
+                                <span class="metric-label">Duration</span>
+                                <span class="metric-value" id="module5-6-part2-metric-duration">-- s</span>
+                            </li>
+                        </ul>
+                        <div class="module56-part2-actions">
+                            <button type="button" class="subtle-btn" id="module5-6-part2-reload">Reload assets</button>
+                            <span class="module56-part2-note" id="module5-6-part2-mask-note">Masks: <code>iphone-moving-masks.npz</code></span>
+                        </div>
+                        <div class="status-line" id="module5-6-part2-status" data-variant="info">Preparing SAM2 overlay assets…</div>
+                    </div>
+                    <div class="module56-part2-visuals">
+                        <div class="result-frame">
+                            <h4>Original Capture</h4>
+                            <div class="result-image result-image--video" data-empty="true">
+                                <video id="module5-6-part2-original-video" controls playsinline preload="metadata" hidden muted></video>
+                                <p id="module5-6-part2-original-placeholder">Loading video…</p>
+                            </div>
+                        </div>
+                        <div class="result-frame">
+                            <h4>SAM2 Overlay Playback</h4>
+                            <div class="overlay-player" id="module5-6-part2-overlay-player">
+                                <video id="module5-6-part2-overlay-video" controls playsinline preload="metadata"></video>
+                                <canvas id="module5-6-part2-overlay-canvas" aria-hidden="true"></canvas>
+                                <div class="overlay-player__hint" id="module5-6-part2-overlay-hint">Loading overlay…</div>
+                            </div>
+                            <div class="overlay-readout">
+                                <span>Frame <strong id="module5-6-part2-frame">--</strong></span>
+                                <span>Box <strong id="module5-6-part2-box">--</strong></span>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </section>
             <!-- Watch the video (collapsed by default) -->

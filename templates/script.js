@@ -336,6 +336,7 @@ document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
 
 document.addEventListener('DOMContentLoaded', initModule1Flow);
 document.addEventListener('DOMContentLoaded', initModule56Flow);
+document.addEventListener('DOMContentLoaded', initModule56Part2Showcase);
 
 function initModule56Flow() {
     const form = document.getElementById('module5-6-part1-form');
@@ -556,6 +557,247 @@ function initModule56Flow() {
             runBtn.disabled = false;
         }
     });
+}
+
+function initModule56Part2Showcase() {
+    const section = document.getElementById('module5-6-part2');
+    const originalVideo = document.getElementById('module5-6-part2-original-video');
+    const overlayVideo = document.getElementById('module5-6-part2-overlay-video');
+    const overlayPlayer = document.getElementById('module5-6-part2-overlay-player');
+    const overlayCanvas = document.getElementById('module5-6-part2-overlay-canvas');
+    const statusLine = document.getElementById('module5-6-part2-status');
+    const reloadBtn = document.getElementById('module5-6-part2-reload');
+    const originalPlaceholder = document.getElementById('module5-6-part2-original-placeholder');
+    const overlayHint = document.getElementById('module5-6-part2-overlay-hint');
+    const frameLabel = document.getElementById('module5-6-part2-frame');
+    const boxLabel = document.getElementById('module5-6-part2-box');
+    const framesMetric = document.getElementById('module5-6-part2-metric-frames');
+    const resolutionMetric = document.getElementById('module5-6-part2-metric-resolution');
+    const fpsMetric = document.getElementById('module5-6-part2-metric-fps');
+    const durationMetric = document.getElementById('module5-6-part2-metric-duration');
+    const maskNote = document.getElementById('module5-6-part2-mask-note');
+
+    if (!section || !originalVideo || !overlayVideo || !overlayCanvas || !statusLine || !overlayPlayer) {
+        return;
+    }
+
+    const overlayCtx = overlayCanvas.getContext('2d');
+    if (!overlayCtx) {
+        return;
+    }
+    const originalFrame = originalVideo.closest('.result-image');
+    let boxes = [];
+    let fps = 30;
+    let videoFrameCount = 0;
+    let maskFrameCount = 0;
+    let assetsLoaded = false;
+    let isLoading = false;
+    let overlayReady = false;
+    let animationFrameId = null;
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const clampFrameIndex = () => {
+        if (!boxes.length || !overlayVideo) return 0;
+        const idx = Math.round((overlayVideo.currentTime || 0) * fps);
+        const maxIdx = boxes.length - 1;
+        return Math.min(Math.max(idx, 0), maxIdx >= 0 ? maxIdx : 0);
+    };
+
+    const stopAnimation = () => {
+        if (animationFrameId !== null) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+    };
+
+    const drawFrame = () => {
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (!overlayReady || !boxes.length) {
+            frameLabel.textContent = '--';
+            boxLabel.textContent = '--';
+            return;
+        }
+
+        const idx = clampFrameIndex();
+        const entry = boxes[idx] || null;
+        const frameTotal = videoFrameCount || boxes.length;
+        frameLabel.textContent = frameTotal ? `${idx + 1} / ${frameTotal}` : `${idx + 1}`;
+
+        if (!entry || !entry.box) {
+            boxLabel.textContent = 'No mask';
+            return;
+        }
+
+        const [x1, y1, x2, y2] = entry.box;
+        const width = Math.max(0, x2 - x1);
+        const height = Math.max(0, y2 - y1);
+        const strokeWidth = Math.max(2, overlayCanvas.width * 0.0035);
+
+        overlayCtx.lineWidth = strokeWidth;
+        overlayCtx.strokeStyle = '#29d3d3';
+        overlayCtx.fillStyle = 'rgba(41, 211, 211, 0.22)';
+        overlayCtx.strokeRect(x1, y1, width, height);
+        overlayCtx.fillRect(x1, y1, width, height);
+
+        // subtle corner markers for easier spatial awareness
+        overlayCtx.strokeStyle = '#0df0ff';
+        overlayCtx.lineWidth = Math.max(1, strokeWidth * 0.6);
+        const marker = Math.min(24, width * 0.2, height * 0.2);
+        if (marker > 0) {
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(x1, y1 + marker);
+            overlayCtx.lineTo(x1, y1);
+            overlayCtx.lineTo(x1 + marker, y1);
+            overlayCtx.moveTo(x2 - marker, y1);
+            overlayCtx.lineTo(x2, y1);
+            overlayCtx.lineTo(x2, y1 + marker);
+            overlayCtx.moveTo(x1, y2 - marker);
+            overlayCtx.lineTo(x1, y2);
+            overlayCtx.lineTo(x1 + marker, y2);
+            overlayCtx.moveTo(x2 - marker, y2);
+            overlayCtx.lineTo(x2, y2);
+            overlayCtx.lineTo(x2, y2 - marker);
+            overlayCtx.stroke();
+        }
+
+        boxLabel.textContent = `${width}px × ${height}px`;
+    };
+
+    const startAnimation = () => {
+        stopAnimation();
+        const tick = () => {
+            drawFrame();
+            animationFrameId = requestAnimationFrame(tick);
+        };
+        animationFrameId = requestAnimationFrame(tick);
+    };
+
+    const resetVideos = () => {
+        stopAnimation();
+        overlayReady = false;
+        frameLabel.textContent = '--';
+        boxLabel.textContent = '--';
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        overlayCanvas.width = overlayCanvas.height = 0;
+        overlayVideo.removeAttribute('src');
+        originalVideo.removeAttribute('src');
+        try { overlayVideo.load(); } catch (e) { /* ignore */ }
+        try { originalVideo.load(); } catch (e) { /* ignore */ }
+        overlayPlayer.classList.remove('ready');
+        if (overlayHint) {
+            overlayHint.textContent = 'Loading overlay…';
+            overlayHint.classList.remove('ready');
+            overlayHint.hidden = false;
+        }
+        if (originalFrame) originalFrame.dataset.empty = 'true';
+        originalVideo.hidden = true;
+        if (originalPlaceholder) originalPlaceholder.hidden = false;
+    };
+
+    const populateMetrics = (data) => {
+        framesMetric.textContent = `${data.maskFrameCount ?? '--'} / ${data.frameCount ?? '--'}`;
+        resolutionMetric.textContent = data.frameWidth && data.frameHeight ? `${data.frameWidth} × ${data.frameHeight}` : '-- × --';
+        fpsMetric.textContent = data.fps ? `${Number(data.fps).toFixed(2)} fps` : '-- fps';
+        durationMetric.textContent = data.durationSeconds ? `${Number(data.durationSeconds).toFixed(2)} s` : '-- s';
+        if (maskNote) {
+            const maskName = data.maskFilename || 'iphone-moving-masks.npz';
+            maskNote.innerHTML = `Masks: <code>${maskName}</code>`;
+        }
+    };
+
+    const handleLoadedMetadata = () => {
+        const width = overlayVideo.videoWidth || 0;
+        const height = overlayVideo.videoHeight || 0;
+        if (!width || !height) return;
+        overlayCanvas.width = width;
+        overlayCanvas.height = height;
+        overlayReady = true;
+        overlayPlayer.classList.add('ready');
+        if (overlayHint) {
+            overlayHint.textContent = 'Press play to visualize the SAM2 track.';
+            overlayHint.classList.add('ready');
+            overlayHint.hidden = false;
+        }
+        drawFrame();
+    };
+
+    overlayVideo.addEventListener('loadedmetadata', handleLoadedMetadata);
+    overlayVideo.addEventListener('play', () => {
+        if (!overlayReady) return;
+        startAnimation();
+    });
+    overlayVideo.addEventListener('pause', stopAnimation);
+    overlayVideo.addEventListener('ended', stopAnimation);
+    overlayVideo.addEventListener('seeking', () => drawFrame());
+    overlayVideo.addEventListener('timeupdate', () => {
+        if (overlayVideo.paused) {
+            drawFrame();
+        }
+    });
+
+    if (originalVideo) {
+        originalVideo.addEventListener('loadeddata', () => {
+            originalVideo.hidden = false;
+            if (originalPlaceholder) originalPlaceholder.hidden = true;
+            if (originalFrame) originalFrame.dataset.empty = 'false';
+        });
+    }
+
+    const loadAssets = async () => {
+        if (isLoading) return;
+        isLoading = true;
+        reloadBtn && (reloadBtn.disabled = true);
+        setStatus('Loading SAM2 assets…', 'info');
+        resetVideos();
+
+        try {
+            const response = await fetch('/api/a56/part2/assets');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to load assets');
+
+            boxes = Array.isArray(data.boxes) ? data.boxes : [];
+            fps = Number(data.fps) || 30;
+            videoFrameCount = Number(data.frameCount) || boxes.length;
+            maskFrameCount = Number(data.maskFrameCount) || boxes.length;
+            populateMetrics(data);
+
+            const videoUrl = data.videoUrl;
+            if (!videoUrl) {
+                throw new Error('Video URL missing in response');
+            }
+
+            overlayVideo.src = videoUrl;
+            originalVideo.src = videoUrl;
+            overlayVideo.load();
+            originalVideo.load();
+            assetsLoaded = true;
+            setStatus('Assets ready. Scrub or press play to inspect the tracker.', 'success');
+        } catch (err) {
+            boxes = [];
+            assetsLoaded = false;
+            setStatus(err.message || 'Failed to load Module 5 & 6 Part 2 assets.', 'error');
+        } finally {
+            isLoading = false;
+            if (reloadBtn) reloadBtn.disabled = false;
+        }
+    };
+
+    reloadBtn && reloadBtn.addEventListener('click', loadAssets);
+
+    registerTabChangeListener((prev, next) => {
+        if (prev === 'a56' && overlayVideo) {
+            try { overlayVideo.pause(); } catch (e) { /* ignore */ }
+        }
+        if (next === 'a56' && !assetsLoaded && !isLoading) {
+            loadAssets();
+        }
+    });
+
+    loadAssets();
 }
 
 /*

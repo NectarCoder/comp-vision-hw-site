@@ -10,8 +10,11 @@ opencv-contrib-python-headless  # or opencv-contrib-python for GUI/dev
 matplotlib
 pillow
 
-# optional ML/vision
+# ML/vision
 mediapipe
+segment-anything
+torch
+torchvision
 # jax + jaxlib are optional for SAM2 model usage:
 # jax>=0.7.1
 # jaxlib>=0.7.1

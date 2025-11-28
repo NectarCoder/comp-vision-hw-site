@@ -16,6 +16,8 @@ import hwsources.module2_part1 as module2_part1
 import hwsources.module5_6_part1 as module5_6
 from hwsources.module2_part2 import process_image as module2_process_image
 import hwsources.module2_part3 as module2_part3
+import hwsources.module4_part1 as module4_part1
+import hwsources.module4_part2 as module4_part2
 
 # Serve static assets from the templates folder so they can be moved
 # from /static into /templates while keeping the same "url_for('static', ...)"
@@ -35,6 +37,7 @@ MODULE56_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm5_6'
 MODULE56_SAMPLE = MODULE56_DIR / 'aruco-marker.mp4'
 MODULE56_PART2_VIDEO = MODULE56_DIR / 'iphone-moving.mp4'
 MODULE56_PART2_MASKS = MODULE56_DIR / 'iphone-moving-masks.npz'
+MODULE4_MIN_IMAGES = 8
 
 VIDEO_MIME_MAP = {
     '.mp4': 'video/mp4',
@@ -151,6 +154,122 @@ def _image_array_to_data_url(image, ext: str = '.png') -> str:
 
     encoded = base64.b64encode(buffer.tobytes()).decode('ascii')
     return f"data:{mime};base64,{encoded}"
+
+
+def _sort_key_natural(name: str):
+    """Return a natural sort key using module4's helper when available."""
+    if hasattr(module4_part1, 'correct_number_sorting'):
+        return module4_part1.correct_number_sorting(name)
+    return name.lower()
+
+
+def _load_module4_uploads(file_storages):
+    """Read uploaded portrait images, enforce constraints, and return sorted entries."""
+    files = [fs for fs in (file_storages or []) if fs and fs.filename]
+    if not files:
+        raise ValueError(f'Please upload at least {MODULE4_MIN_IMAGES} portrait images (height greater than width).')
+
+    uploads = []
+    for storage in files:
+        filename = secure_filename(storage.filename) or 'upload.jpg'
+        suffix = Path(filename).suffix.lower()
+        if suffix not in ALLOWED_IMAGE_EXTENSIONS:
+            raise ValueError(f"Unsupported file type for '{filename}'.")
+
+        data = storage.read()
+        if not data:
+            raise ValueError(f"File '{filename}' was empty.")
+        image_array = np.frombuffer(data, dtype=np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError(f"Could not decode '{filename}'. Did you upload a valid image?")
+
+        height, width = image.shape[:2]
+        if height <= width:
+            raise ValueError(f"'{filename}' must be portrait oriented (height greater than width).")
+
+        uploads.append({'filename': filename, 'image': image})
+
+    if len(uploads) < MODULE4_MIN_IMAGES:
+        raise ValueError(f'Please upload at least {MODULE4_MIN_IMAGES} portrait images.')
+
+    uploads.sort(key=lambda entry: _sort_key_natural(entry['filename']))
+    return uploads
+
+
+def _stitch_module4_part1(images):
+    """Run the OpenCV (Module 4 Part 1) stitching pipeline and return a panorama image."""
+    if len(images) < 4:
+        raise ValueError('At least 4 images are required to compute the OpenCV panorama.')
+
+    work_width = getattr(module4_part1, 'WORK_WIDTH', 800)
+    erosion_iterations = getattr(module4_part1, 'SEAM_EROSION_ITERATIONS', 1)
+    resized = [module4_part1.resize_image(img, target_width=work_width) for img in images]
+    homographies = [np.identity(3)]
+
+    for idx in range(len(resized) - 1):
+        kps_prev, feats_prev = module4_part1.extract_sift_keypoints_descriptors(resized[idx])
+        kps_curr, feats_curr = module4_part1.extract_sift_keypoints_descriptors(resized[idx + 1])
+        result = module4_part1.match_keypoints_affine(kps_curr, kps_prev, feats_curr, feats_prev)
+        if result is None:
+            raise RuntimeError(f'Unable to align image {idx + 2} with image {idx + 1}. Not enough matches detected.')
+        _, homography_curr_to_prev, _ = result
+        homographies.append(homographies[idx].dot(homography_curr_to_prev))
+
+    middle_index = len(resized) // 2
+    homography_middle_to_0 = homographies[middle_index]
+    homography_0_to_middle = np.linalg.inv(homography_middle_to_0)
+
+    new_homographies = []
+    all_corners = []
+    for img, homography in zip(resized, homographies):
+        new_h = homography_0_to_middle.dot(homography)
+        new_homographies.append(new_h)
+        height, width = img.shape[:2]
+        corners = np.float32([[0, 0], [0, height], [width, height], [width, 0]]).reshape(-1, 1, 2)
+        warped = cv2.perspectiveTransform(corners, new_h)
+        all_corners.append(warped)
+
+    if not all_corners:
+        raise RuntimeError('Failed to determine panorama canvas size.')
+
+    all_corners = np.concatenate(all_corners, axis=0)
+    x_min, y_min = np.int32(all_corners.min(axis=0).ravel())
+    x_max, y_max = np.int32(all_corners.max(axis=0).ravel())
+    output_width, output_height = x_max - x_min, y_max - y_min
+    if output_width <= 0 or output_height <= 0:
+        raise RuntimeError('Computed panorama dimensions were invalid.')
+
+    translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
+    panorama = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+    erosion_kernel = np.ones((3, 3), np.uint8)
+    draw_order = sorted(range(len(resized)), key=lambda i: abs(i - middle_index), reverse=True)
+
+    for idx in draw_order:
+        final_h = translation.dot(new_homographies[idx])
+        warped = cv2.warpPerspective(resized[idx], final_h, (output_width, output_height), flags=cv2.INTER_LINEAR)
+        gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+        _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+        mask = cv2.erode(mask, np.ones((3, 3), np.uint8), iterations=erosion_iterations)
+        panorama[mask > 0] = warped[mask > 0]
+
+    panorama = module4_part1.remove_black_borders(panorama)
+    if panorama is None or panorama.size == 0:
+        raise RuntimeError('OpenCV stitching finished without a valid panorama output.')
+    return panorama
+
+
+def _stitch_module4_part2(images):
+    """Run the custom-from-scratch Module 4 Part 2 pipeline."""
+    if len(images) < 4:
+        raise ValueError('At least 4 images are required to compute the custom panorama.')
+
+    work_width = getattr(module4_part2, 'WORK_WIDTH', 400)
+    resized = [module4_part2.resize_image(img, width=work_width) for img in images]
+    panorama = module4_part2.run_stitching_custom(resized)
+    if panorama is None or panorama.size == 0:
+        raise RuntimeError('Custom stitching failed to return an output image.')
+    return panorama
 
 
 _module56_part2_cache = None
@@ -749,6 +868,68 @@ def handle_a56_part1_process():
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:
         return jsonify({'error': f'Failed to run Module 5/6 Part 1: {exc}'}), 500
+
+
+def _get_module4_files_from_request():
+    files = request.files.getlist('images')
+    if not files:
+        files = request.files.getlist('images[]')
+    return files
+
+
+@app.route('/api/a4/part1', methods=['POST'])
+def handle_a4_part1_upload():
+    try:
+        uploads = _load_module4_uploads(_get_module4_files_from_request())
+        panorama = _stitch_module4_part1([entry['image'] for entry in uploads])
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except Exception as exc:
+        return jsonify({'error': f'Failed to stitch images with OpenCV pipeline: {exc}'}), 500
+
+    return jsonify({
+        'count': len(uploads),
+        'filenames': [entry['filename'] for entry in uploads],
+        'panorama': _image_array_to_data_url(panorama),
+        'width': int(panorama.shape[1]),
+        'height': int(panorama.shape[0]),
+        'message': f"Stitched {len(uploads)} portrait images using the OpenCV SIFT pipeline."
+    })
+
+
+@app.route('/api/a4/part2', methods=['POST'])
+def handle_a4_part2_upload():
+    try:
+        uploads = _load_module4_uploads(_get_module4_files_from_request())
+        panorama = _stitch_module4_part2([entry['image'] for entry in uploads])
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except Exception as exc:
+        return jsonify({'error': f'Failed to stitch images with custom pipeline: {exc}'}), 500
+
+    return jsonify({
+        'count': len(uploads),
+        'filenames': [entry['filename'] for entry in uploads],
+        'panorama': _image_array_to_data_url(panorama),
+        'width': int(panorama.shape[1]),
+        'height': int(panorama.shape[0]),
+        'message': f"Stitched {len(uploads)} portrait images using the scratch SIFT + affine pipeline."
+    })
+
+
+@app.route('/api/a4/part1/results', methods=['DELETE'])
+def clear_a4_part1_results():
+    """Stateless endpoint kept for parity with other modules."""
+    return jsonify({'cleared': True})
+
+
+@app.route('/api/a4/part2/results', methods=['DELETE'])
+def clear_a4_part2_results():
+    return jsonify({'cleared': True})
 
 
 @app.route('/api/a2', methods=['POST'])

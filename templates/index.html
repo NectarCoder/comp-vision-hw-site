@@ -540,11 +540,111 @@
                     </p>
                 </div>
             </section>
-            <div class="module-container">
-                <textarea id="input-a4" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runModule('a4')">Run Module 4</button>
-                <div id="output-a4" class="output-box">// Output will appear here...</div>
-            </div>
+            <p class="module4-intro">Both parts below expect the <strong>same portrait image set (8+ photos)</strong>. Use Part 1 to see the OpenCV reference implementation and Part 2 to compare it against the scratch-built SIFT + RANSAC pipeline.</p>
+
+            <section class="module4-card" id="module4-part1" aria-labelledby="module4-part1-title">
+                <header class="module4-card__header">
+                    <div>
+                        <h3 id="module4-part1-title">Part 1 &ndash; OpenCV SIFT Panorama</h3>
+                        <p>Leans on OpenCV for SIFT features, brute-force matching, and affine blending.</p>
+                    </div>
+                    <span class="module4-pill" data-variant="opencv">OpenCV pipeline</span>
+                </header>
+                <div class="module4-card__body module4-grid">
+                    <form id="module4-part1-form" class="module4-form" aria-label="Module 4 Part 1 form" enctype="multipart/form-data">
+                        <div class="field">
+                            <label class="file-input module4-file-picker">
+                                <input type="file" id="module4-part1-input" name="images" accept="image/*" multiple>
+                                <span>Select portrait images</span>
+                            </label>
+                            <p class="hint">Upload <strong>at least 8</strong> portrait images (height &gt; width) captured left-to-right. More frames are welcome.</p>
+                            <div class="module4-alert" role="note">
+                                Portrait is mandatory. Landscape frames will be rejected to protect the pipeline from bowtie distortion.
+                            </div>
+                        </div>
+                        <div class="module4-selection" id="module4-part1-selection" data-empty="true">
+                            <p>No images selected yet.</p>
+                        </div>
+                        <div class="module4-actions">
+                            <button type="submit" class="primary-btn" id="module4-part1-run" disabled>Stitch with OpenCV</button>
+                            <button type="button" class="subtle-btn" id="module4-part1-reset" disabled>Reset inputs</button>
+                        </div>
+                        <div class="status-line" id="module4-part1-status" data-variant="info">Upload 8+ portrait frames to enable stitching.</div>
+                    </form>
+                    <div class="module4-results">
+                        <div class="result-frame">
+                            <h4>Panorama Preview</h4>
+                            <div class="result-image" data-empty="true">
+                                <img id="module4-part1-output" alt="Module 4 Part 1 panorama preview" hidden>
+                                <p id="module4-part1-placeholder">No panorama generated yet.</p>
+                            </div>
+                            <dl class="module4-meta">
+                                <div>
+                                    <dt>Input count</dt>
+                                    <dd id="module4-part1-count">0</dd>
+                                </div>
+                                <div>
+                                    <dt>Output size</dt>
+                                    <dd id="module4-part1-size">-- × --</dd>
+                                </div>
+                            </dl>
+                            <button type="button" class="subtle-btn module4-download-btn" id="module4-part1-download" hidden>Download panorama</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <section class="module4-card" id="module4-part2" aria-labelledby="module4-part2-title">
+                <header class="module4-card__header">
+                    <div>
+                        <h3 id="module4-part2-title">Part 2 &ndash; Scratch SIFT + Affine RANSAC</h3>
+                        <p>Executes the fully manual implementation of SIFT, custom descriptors, and affine RANSAC blending.</p>
+                    </div>
+                    <span class="module4-pill" data-variant="scratch">Manual pipeline</span>
+                </header>
+                <div class="module4-card__body module4-grid">
+                    <form id="module4-part2-form" class="module4-form" aria-label="Module 4 Part 2 form" enctype="multipart/form-data">
+                        <div class="field">
+                            <label class="file-input module4-file-picker">
+                                <input type="file" id="module4-part2-input" name="images" accept="image/*" multiple>
+                                <span>Select portrait images</span>
+                            </label>
+                            <p class="hint">Use the same 8+ portrait stack to compare results with the handcrafted pipeline.</p>
+                            <div class="module4-alert" role="note">
+                                The scratch SIFT code is sensitive to ordering and orientation. Keep the portrait constraint enforced above.
+                            </div>
+                        </div>
+                        <div class="module4-selection" id="module4-part2-selection" data-empty="true">
+                            <p>No images selected yet.</p>
+                        </div>
+                        <div class="module4-actions">
+                            <button type="submit" class="primary-btn" id="module4-part2-run" disabled>Stitch with Scratch SIFT</button>
+                            <button type="button" class="subtle-btn" id="module4-part2-reset" disabled>Reset inputs</button>
+                        </div>
+                        <div class="status-line" id="module4-part2-status" data-variant="info">Upload the portrait set to unlock the custom pipeline.</div>
+                    </form>
+                    <div class="module4-results">
+                        <div class="result-frame">
+                            <h4>Panorama Preview</h4>
+                            <div class="result-image" data-empty="true">
+                                <img id="module4-part2-output" alt="Module 4 Part 2 panorama preview" hidden>
+                                <p id="module4-part2-placeholder">No panorama generated yet.</p>
+                            </div>
+                            <dl class="module4-meta">
+                                <div>
+                                    <dt>Input count</dt>
+                                    <dd id="module4-part2-count">0</dd>
+                                </div>
+                                <div>
+                                    <dt>Output size</dt>
+                                    <dd id="module4-part2-size">-- × --</dd>
+                                </div>
+                            </dl>
+                            <button type="button" class="subtle-btn module4-download-btn" id="module4-part2-download" hidden>Download panorama</button>
+                        </div>
+                    </div>
+                </div>
+            </section>
             <!-- Watch the video (collapsed by default) -->
             <section class="video-section" aria-labelledby="video-toggle-a4">
                 <button id="video-toggle-a4" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a4">Watch the video ▾</button>

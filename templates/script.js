@@ -298,6 +298,7 @@ async function runModule(id) {
 document.addEventListener('DOMContentLoaded', initModule2Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part1Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
+document.addEventListener('DOMContentLoaded', initModule4Flow);
 
 (function () {
     const themeToggle = document.getElementById('theme-toggle');
@@ -860,6 +861,13 @@ function initGlobalReset() {
             if (count) { count.textContent = '0'; }
             if (templatesGrid) { templatesGrid.innerHTML = ''; }
         }
+
+        ['module4-part1-form', 'module4-part2-form'].forEach((formId) => {
+            const formEl = document.getElementById(formId);
+            if (formEl && typeof formEl.__module4Reset === 'function') {
+                try { formEl.__module4Reset({ clearServer: true }); } catch (err) { /* ignore */ }
+            }
+        });
 
         // Clear any run outputs in simple modules (3, 4, 5-6, 7) and additional UI elements
         ['a3', 'a4', 'a56', 'a7'].forEach((id) => {
@@ -1536,6 +1544,233 @@ function initModule2Part3Flow() {
     });
 
     loadReferences();
+}
+
+const MODULE4_MIN_IMAGES = 8;
+
+function initModule4Flow() {
+    const configs = [
+        {
+            key: 'part1',
+            formId: 'module4-part1-form',
+            inputId: 'module4-part1-input',
+            selectionId: 'module4-part1-selection',
+            runBtnId: 'module4-part1-run',
+            resetBtnId: 'module4-part1-reset',
+            statusId: 'module4-part1-status',
+            outputImgId: 'module4-part1-output',
+            placeholderId: 'module4-part1-placeholder',
+            countId: 'module4-part1-count',
+            sizeId: 'module4-part1-size',
+            downloadId: 'module4-part1-download',
+            endpoint: '/api/a4/part1',
+            clearEndpoint: '/api/a4/part1/results',
+            readyMessage: 'Ready to stitch with the OpenCV pipeline.',
+            uploadMessage: 'Uploading images and running the OpenCV stitcher…',
+            downloadFilename: 'module4-part1-panorama.png'
+        },
+        {
+            key: 'part2',
+            formId: 'module4-part2-form',
+            inputId: 'module4-part2-input',
+            selectionId: 'module4-part2-selection',
+            runBtnId: 'module4-part2-run',
+            resetBtnId: 'module4-part2-reset',
+            statusId: 'module4-part2-status',
+            outputImgId: 'module4-part2-output',
+            placeholderId: 'module4-part2-placeholder',
+            countId: 'module4-part2-count',
+            sizeId: 'module4-part2-size',
+            downloadId: 'module4-part2-download',
+            endpoint: '/api/a4/part2',
+            clearEndpoint: '/api/a4/part2/results',
+            readyMessage: 'Ready to run the scratch-built stitcher.',
+            uploadMessage: 'Uploading images and running the custom SIFT pipeline…',
+            downloadFilename: 'module4-part2-panorama.png'
+        }
+    ];
+
+    configs.forEach((cfg) => setupModule4Part(cfg));
+}
+
+function setupModule4Part(config) {
+    const form = document.getElementById(config.formId);
+    if (!form) return;
+
+    const fileInput = document.getElementById(config.inputId);
+    const selectionEl = document.getElementById(config.selectionId);
+    const runBtn = document.getElementById(config.runBtnId);
+    const resetBtn = document.getElementById(config.resetBtnId);
+    const statusLine = document.getElementById(config.statusId);
+    const outputImg = document.getElementById(config.outputImgId);
+    const placeholder = document.getElementById(config.placeholderId);
+    const countEl = document.getElementById(config.countId);
+    const sizeEl = document.getElementById(config.sizeId);
+    const downloadBtn = document.getElementById(config.downloadId);
+
+    if (!fileInput || !selectionEl || !runBtn || !resetBtn || !statusLine || !outputImg || !placeholder || !countEl || !sizeEl) {
+        return;
+    }
+
+    const selectionDefault = selectionEl.innerHTML;
+    const placeholderDefault = placeholder.textContent;
+    const defaultStatus = statusLine.textContent || 'Upload 8+ portrait frames to enable stitching.';
+    const readyMessage = config.readyMessage || 'Ready to stitch.';
+    const uploadMessage = config.uploadMessage || 'Uploading images and stitching…';
+    const state = { hasResults: false, downloadUrl: null };
+
+    const setStatus = (message, variant = 'info') => {
+        if (!statusLine) return;
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const resetSelection = () => {
+        selectionEl.dataset.empty = 'true';
+        selectionEl.innerHTML = selectionDefault || '<p>No images selected yet.</p>';
+    };
+
+    const updateSelection = () => {
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) {
+            resetSelection();
+            runBtn.disabled = true;
+            resetBtn.disabled = !state.hasResults;
+            return;
+        }
+
+        selectionEl.dataset.empty = 'false';
+        selectionEl.innerHTML = '';
+        const list = document.createElement('ol');
+        list.className = 'module4-file-list';
+        files.forEach((file, index) => {
+            const item = document.createElement('li');
+            item.textContent = `${index + 1}. ${file.name}`;
+            list.appendChild(item);
+        });
+        selectionEl.appendChild(list);
+
+        runBtn.disabled = files.length < MODULE4_MIN_IMAGES;
+        if (!state.hasResults) {
+            resetBtn.disabled = false;
+        }
+    };
+
+    const clearOutput = () => {
+        outputImg.removeAttribute('src');
+        outputImg.hidden = true;
+        placeholder.hidden = false;
+        if (placeholderDefault) placeholder.textContent = placeholderDefault;
+        countEl.textContent = '0';
+        sizeEl.textContent = '-- × --';
+        if (downloadBtn) downloadBtn.hidden = true;
+        state.downloadUrl = null;
+        state.hasResults = false;
+    };
+
+    const performReset = ({ clearServer = true, keepStatus = false } = {}) => {
+        form.reset();
+        try { fileInput.value = ''; } catch (err) { /* ignore readonly errors */ }
+        clearOutput();
+        updateSelection();
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        if (!keepStatus) setStatus(defaultStatus, 'info');
+        if (clearServer && config.clearEndpoint) {
+            fetch(config.clearEndpoint, { method: 'DELETE', keepalive: true }).catch(() => { /* best effort */ });
+        }
+    };
+
+    const handleDownload = () => {
+        if (!state.downloadUrl) return;
+        const link = document.createElement('a');
+        link.href = state.downloadUrl;
+        link.download = config.downloadFilename || `${config.key || 'module4'}-panorama.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const updateButtonsAfterSubmit = () => {
+        const fileCount = fileInput.files ? fileInput.files.length : 0;
+        runBtn.disabled = fileCount < MODULE4_MIN_IMAGES;
+        resetBtn.disabled = !(fileCount || state.hasResults);
+    };
+
+    const showResult = (payload, fileCount) => {
+        if (payload.panorama) {
+            outputImg.src = payload.panorama;
+            outputImg.hidden = false;
+            placeholder.hidden = true;
+            state.downloadUrl = payload.panorama;
+            if (downloadBtn) downloadBtn.hidden = false;
+        }
+        countEl.textContent = Number(payload.count || fileCount || 0).toString();
+        if (Number.isFinite(payload.width) && Number.isFinite(payload.height)) {
+            sizeEl.textContent = `${payload.width} × ${payload.height}`;
+        } else {
+            sizeEl.textContent = '-- × --';
+        }
+        state.hasResults = true;
+        resetBtn.disabled = false;
+        setStatus(payload.message || 'Panorama generated successfully.', 'success');
+    };
+
+    fileInput.addEventListener('change', () => {
+        updateSelection();
+        const count = fileInput.files ? fileInput.files.length : 0;
+        if (count >= MODULE4_MIN_IMAGES) {
+            setStatus(readyMessage, 'info');
+        } else {
+            setStatus(defaultStatus, 'info');
+        }
+    });
+
+    resetBtn.addEventListener('click', () => {
+        performReset({ clearServer: true });
+    });
+
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', handleDownload);
+    }
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const files = Array.from(fileInput.files || []);
+        if (files.length < MODULE4_MIN_IMAGES) {
+            setStatus(`Please select at least ${MODULE4_MIN_IMAGES} portrait images.`, 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        files.forEach((file) => formData.append('images', file));
+
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        setStatus(uploadMessage, 'info');
+
+        try {
+            const response = await fetch(config.endpoint, { method: 'POST', body: formData });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Stitching failed.');
+            showResult(data, files.length);
+        } catch (err) {
+            setStatus(err.message || 'Unexpected error while stitching.', 'error');
+        } finally {
+            updateButtonsAfterSubmit();
+        }
+    });
+
+    registerTabChangeListener((prev, next) => {
+        if (prev === 'a4' && next !== 'a4') {
+            performReset({ clearServer: state.hasResults || (fileInput.files && fileInput.files.length > 0) });
+        }
+    });
+
+    form.__module4Reset = (options) => performReset(options || { clearServer: true });
+
+    updateSelection();
+    setStatus(defaultStatus, 'info');
 }
 
 function initModule1Flow() {

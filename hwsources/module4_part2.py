@@ -41,7 +41,7 @@ WORK_WIDTH = 400
 class ScratchSIFT:
     def __init__(self, sigma=1.6, num_intervals=3, contrast_threshold=0.04, edge_threshold=10):
         self.sigma = sigma
-        self.intervals = intervals
+        self.intervals = num_intervals
         self.contrast_threshold = contrast_threshold
         self.edge_threshold = edge_threshold
 
@@ -257,7 +257,7 @@ def natural_sort_key(s):
 def detect_and_describe_custom(image, name="Image"):
     """Wrapper to call the custom ScratchSIFT logic."""
     print(f"   [Scratch] Detecting features in {name}...", end=" ", flush=True)
-    sift = CustomSIFT()
+    sift = ScratchSIFT()
     gray = image
     if len(image.shape) == 3: gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
     

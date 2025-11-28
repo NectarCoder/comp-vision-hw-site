@@ -861,11 +861,102 @@
                     </p>
                 </div>
             </section>
-            <div class="module-container">
-                <textarea id="input-a7" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runModule('a7')">Run Module 7</button>
-                <div id="output-a7" class="output-box">// Output will appear here...</div>
-            </div>
+            <section class="module7-card" id="module7-part1" aria-labelledby="module7-part1-title">
+                <header class="module7-card__header">
+                    <div>
+                        <h3 id="module7-part1-title">Part 1 - Stereo Depth (Preview)</h3>
+                        <p>The calibrated stereo reconstruction UI is coming soon. This placeholder keeps the tab structure ready for the final deliverable.</p>
+                    </div>
+                </header>
+                <div class="module7-card__body">
+                    <p class="module7-note">Check back for the interactive stereo measurement workflow once the assets are finalized.</p>
+                </div>
+            </section>
+
+            <section class="module7-card" id="module7-part2" aria-labelledby="module7-part2-title">
+                <header class="module7-card__header">
+                    <div>
+                        <h3 id="module7-part2-title">Part 2 - Pose &amp; Hand Tracking</h3>
+                        <p>Upload a short clip to extract MediaPipe pose &amp; hand landmarks, export them as CSV, and watch the annotated video.</p>
+                    </div>
+                </header>
+                <div class="module7-card__body module7-grid">
+                    <form id="module7-part2-form" aria-label="Module 7 Part 2 form" enctype="multipart/form-data">
+                        <div class="field">
+                            <label class="file-input">
+                                <input type="file" id="module7-video-input" accept="video/*">
+                                <span>Select a video file</span>
+                            </label>
+                            <div class="module7-sample-toggle">
+                                <input type="checkbox" id="module7-use-sample">
+                                <label for="module7-use-sample">Use sample pose video</label>
+                            </div>
+                        </div>
+                        <p class="hint">Supported formats: MP4, AVI, MOV, MKV, WEBM. Short clips (≤30 seconds) keep processing fast.</p>
+                        <div class="module7-actions">
+                            <button type="submit" class="primary-btn" id="module7-run-btn" disabled>Upload &amp; Run Tracker</button>
+                            <button type="button" class="subtle-btn" id="module7-reset-btn" disabled>Reset</button>
+                        </div>
+                        <div class="status-line" id="module7-part2-status" data-variant="info">Choose a video or enable the sample clip to get started.</div>
+                    </form>
+                    <div class="module7-output" aria-live="polite">
+                        <div class="module7-video-grid">
+                            <div class="result-frame">
+                                <h4>Original Video</h4>
+                                <div class="result-image result-image--video" data-empty="true">
+                                    <video id="module7-original-video" controls playsinline preload="metadata" hidden muted></video>
+                                    <p id="module7-original-placeholder">No video selected.</p>
+                                </div>
+                            </div>
+                            <div class="result-frame">
+                                <h4>Annotated Output</h4>
+                                <div class="result-image result-image--video" data-empty="true">
+                                    <video id="module7-annotated-video" controls playsinline preload="metadata" hidden muted></video>
+                                    <p id="module7-annotated-placeholder">No annotated output yet.</p>
+                                </div>
+                                <div class="module7-downloads" id="module7-download-area" hidden>
+                                    <a id="module7-annotated-download" class="subtle-btn" href="#" download>Download annotated video</a>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="module7-summary" id="module7-summary">
+                            <div>
+                                <span class="metric-label">Frames processed</span>
+                                <span class="metric-value" id="module7-metric-frames">--</span>
+                            </div>
+                            <div>
+                                <span class="metric-label">Duration (s)</span>
+                                <span class="metric-value" id="module7-metric-duration">--</span>
+                            </div>
+                            <div>
+                                <span class="metric-label">Frame rate</span>
+                                <span class="metric-value" id="module7-metric-fps">--</span>
+                            </div>
+                            <div>
+                                <span class="metric-label">Resolution</span>
+                                <span class="metric-value" id="module7-metric-size">-- × --</span>
+                            </div>
+                            <div>
+                                <span class="metric-label">CSV rows</span>
+                                <span class="metric-value" id="module7-metric-csv">--</span>
+                            </div>
+                        </div>
+                        <div class="module7-csv-panel">
+                            <div class="module7-csv-header">
+                                <h4>Landmark CSV Preview</h4>
+                                <a id="module7-csv-download" class="subtle-btn" href="#" download hidden>Download CSV</a>
+                            </div>
+                            <div class="module7-csv-table-wrapper" id="module7-csv-wrapper" data-empty="true">
+                                <table>
+                                    <thead id="module7-csv-head"></thead>
+                                    <tbody id="module7-csv-body"></tbody>
+                                </table>
+                                <p id="module7-csv-placeholder">Run the pose tracker to inspect the first few rows.</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </section>
             <!-- Watch the video (collapsed by default) -->
             <section class="video-section" aria-labelledby="video-toggle-a7">
                 <button id="video-toggle-a7" class="video-toggle" aria-expanded="false" aria-controls="video-panel-a7">Watch the video ▾</button>
@@ -879,6 +970,7 @@
                 <div id="source-panel-a7" class="source-panel">
                     <div class="source-files" role="list">
                         <button class="source-file" role="listitem" data-module="a7" data-filename="module7_part1.py" data-source-path="module7_part1.py">module7_part1.py</button>
+                        <button class="source-file" role="listitem" data-module="a7" data-filename="module7_part2.py" data-source-path="module7_part2.py">module7_part2.py</button>
                     </div>
                     <div class="source-toolbar" aria-hidden="true" hidden>
                         <a class="source-button view-raw-btn" target="_blank" rel="noopener noreferrer" aria-disabled="true">View raw</a>

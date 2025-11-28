@@ -1,4 +1,5 @@
 import base64
+import csv
 import shutil
 import subprocess
 from pathlib import Path
@@ -18,6 +19,7 @@ from hwsources.module2_part2 import process_image as module2_process_image
 import hwsources.module2_part3 as module2_part3
 import hwsources.module4_part1 as module4_part1
 import hwsources.module4_part2 as module4_part2
+import hwsources.module7_part2 as module7_part2
 
 # Serve static assets from the templates folder so they can be moved
 # from /static into /templates while keeping the same "url_for('static', ...)"
@@ -39,6 +41,8 @@ MODULE56_PART2_VIDEO = MODULE56_DIR / 'iphone-moving.mp4'
 MODULE56_PART2_MASKS = MODULE56_DIR / 'iphone-moving-masks.npz'
 MODULE4_MIN_IMAGES = 8
 MODULE4_SAMPLE_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm4'
+MODULE7_RESOURCES_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm7'
+MODULE7_PART2_SAMPLE = MODULE7_RESOURCES_DIR / 'karate.mp4'
 
 VIDEO_MIME_MAP = {
     '.mp4': 'video/mp4',
@@ -87,6 +91,38 @@ def _image_file_to_data_url(path: Path) -> str:
     data = path.read_bytes()
     encoded = base64.b64encode(data).decode('ascii')
     return f"data:{mime};base64,{encoded}"
+
+
+def _video_file_to_data_url(path: Path) -> str:
+    """Return a base64 video data URL for the given file."""
+    mime = VIDEO_MIME_MAP.get(path.suffix.lower(), 'application/octet-stream')
+    data = path.read_bytes()
+    encoded = base64.b64encode(data).decode('ascii')
+    return f"data:{mime};base64,{encoded}"
+
+
+def _csv_to_data_url(path: Path) -> str:
+    data = path.read_bytes()
+    encoded = base64.b64encode(data).decode('ascii')
+    return f"data:text/csv;base64,{encoded}"
+
+
+def _build_csv_preview(csv_path: Path, limit: int = 5):
+    columns = []
+    rows = []
+    total = 0
+    with csv_path.open('r', newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        columns = reader.fieldnames or []
+        for row in reader:
+            total += 1
+            if len(rows) < limit:
+                rows.append({col: row.get(col) for col in columns})
+    return columns, rows, total
+
+
+def _get_request_payload():
+    return request.form if request.form else (request.get_json(silent=True) or {})
 
 
 def _prepare_video_for_web(path: Path) -> Path:
@@ -820,6 +856,18 @@ def get_a56_part1_sample():
         return jsonify({'error': f'Failed to load sample video: {exc}'}), 500
 
 
+@app.route('/api/a7/part2/sample', methods=['GET'])
+def get_a7_part2_sample():
+    try:
+        if not MODULE7_PART2_SAMPLE.exists():
+            raise FileNotFoundError(f"Sample video missing at {MODULE7_PART2_SAMPLE}")
+        return jsonify({'filename': MODULE7_PART2_SAMPLE.name, 'video': _video_file_to_data_url(MODULE7_PART2_SAMPLE)})
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load Module 7 sample video: {exc}'}), 500
+
+
 @app.route('/api/a56/part2/assets', methods=['GET'])
 def get_a56_part2_assets():
     """Return metadata + bounding boxes for the fixed SAM2 showcase video."""
@@ -1208,6 +1256,108 @@ def handle_a7():
     # TODO: Connect Module 7 code
     response = f"[Stub] Module 7 final project placeholder."
     return jsonify({'result': response})
+
+
+@app.route('/api/a7/part2', methods=['POST'])
+def handle_a7_part2_process():
+    """Accept a video upload or use the bundled sample to run pose + hand tracking."""
+    try:
+        payload = _get_request_payload()
+        video_file = request.files.get('video') if request.files else None
+        sample_name = payload.get('sample') if payload else None
+
+        if video_file and video_file.filename == '':
+            return jsonify({'error': 'Empty filename supplied.'}), 400
+
+        if not video_file and not sample_name:
+            return jsonify({'error': 'Please upload a video or choose the example video.'}), 400
+
+        if video_file:
+            filename = secure_filename(video_file.filename) or 'pose-tracking.mp4'
+        else:
+            filename = Path(sample_name).name
+
+        suffix = Path(filename).suffix.lower()
+        if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+            return jsonify({'error': 'Unsupported video format.'}), 400
+
+        with TemporaryDirectory() as tmpdir:
+            tmp_dir_path = Path(tmpdir)
+            input_path = tmp_dir_path / filename
+            if video_file:
+                video_file.save(input_path)
+            else:
+                if filename != MODULE7_PART2_SAMPLE.name or not MODULE7_PART2_SAMPLE.exists():
+                    return jsonify({'error': 'Requested sample is not available.'}), 400
+                shutil.copy2(MODULE7_PART2_SAMPLE, input_path)
+
+            annotated_path = tmp_dir_path / f"{input_path.stem}_annotated.mp4"
+            try:
+                result = module7_part2.run_pose_and_hand_tracking(
+                    input_path,
+                    display=False,
+                    annotated_output_path=annotated_path,
+                )
+            except Exception as exc:
+                return jsonify({'error': f'Pose estimation failed: {exc}'}), 500
+
+            csv_path = Path(result.get('csv_path')) if result.get('csv_path') else None
+            if not csv_path or not csv_path.exists():
+                return jsonify({'error': 'Pose estimation did not produce a CSV file.'}), 500
+
+            annotated_file = result.get('annotated_video_path')
+            annotated_preview = None
+            annotated_filename = None
+            if annotated_file:
+                annotated_file = _prepare_video_for_web(Path(annotated_file))
+                annotated_preview = _video_file_to_data_url(annotated_file)
+                annotated_filename = annotated_file.name
+
+            original_preview = _video_file_to_data_url(input_path)
+            csv_data_url = _csv_to_data_url(csv_path)
+            columns, preview_rows, row_count = _build_csv_preview(csv_path)
+
+            summary = {
+                'frameCount': result.get('frame_count'),
+                'recordCount': result.get('record_count'),
+                'fps': result.get('fps'),
+                'durationSeconds': result.get('duration_seconds'),
+                'frameWidth': result.get('frame_width'),
+                'frameHeight': result.get('frame_height'),
+                'csvRowCount': row_count,
+            }
+
+            response = {
+                'message': f'Pose estimation complete for {filename}',
+                'original': {
+                    'filename': filename,
+                    'video': original_preview,
+                },
+                'annotated': None,
+                'csv': {
+                    'filename': csv_path.name,
+                    'dataUrl': csv_data_url,
+                    'preview': {
+                        'columns': columns,
+                        'rows': preview_rows,
+                    },
+                    'rowCount': row_count,
+                },
+                'summary': summary,
+            }
+            if annotated_preview and annotated_filename:
+                response['annotated'] = {
+                    'filename': annotated_filename,
+                    'video': annotated_preview,
+                }
+
+            return jsonify(response)
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run Module 7 Part 2: {exc}'}), 500
 
 
 @app.route('/source/<path:filename>')

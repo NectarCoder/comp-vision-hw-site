@@ -387,6 +387,7 @@ document.addEventListener('DOMContentLoaded', initModule4Flow);
 document.addEventListener('DOMContentLoaded', initModule1Flow);
 document.addEventListener('DOMContentLoaded', initModule56Flow);
 document.addEventListener('DOMContentLoaded', initModule56Part2Showcase);
+document.addEventListener('DOMContentLoaded', initModule7Flow);
 
 function initModule56Flow() {
     const form = document.getElementById('module5-6-part1-form');
@@ -850,6 +851,345 @@ function initModule56Part2Showcase() {
     loadAssets();
 }
 
+function initModule7Flow() {
+    const form = document.getElementById('module7-part2-form');
+    if (!form) return;
+
+    const fileInput = document.getElementById('module7-video-input');
+    const sampleCheckbox = document.getElementById('module7-use-sample');
+    const runBtn = document.getElementById('module7-run-btn');
+    const resetBtn = document.getElementById('module7-reset-btn');
+    const statusLine = document.getElementById('module7-part2-status');
+    const originalVideo = document.getElementById('module7-original-video');
+    const annotatedVideo = document.getElementById('module7-annotated-video');
+    const originalPlaceholder = document.getElementById('module7-original-placeholder');
+    const annotatedPlaceholder = document.getElementById('module7-annotated-placeholder');
+    const downloadArea = document.getElementById('module7-download-area');
+    const downloadLink = document.getElementById('module7-annotated-download');
+    const csvDownload = document.getElementById('module7-csv-download');
+    const csvWrapper = document.getElementById('module7-csv-wrapper');
+    const csvHead = document.getElementById('module7-csv-head');
+    const csvBody = document.getElementById('module7-csv-body');
+    const csvPlaceholder = document.getElementById('module7-csv-placeholder');
+    const framesMetric = document.getElementById('module7-metric-frames');
+    const durationMetric = document.getElementById('module7-metric-duration');
+    const fpsMetric = document.getElementById('module7-metric-fps');
+    const sizeMetric = document.getElementById('module7-metric-size');
+    const csvMetric = document.getElementById('module7-metric-csv');
+
+    if (!fileInput || !runBtn || !resetBtn || !statusLine || !originalVideo || !annotatedVideo) {
+        return;
+    }
+
+    const SAMPLE_FILENAME = 'karate.mp4';
+    const state = {
+        sampleToken: 0,
+        localPreviewUrl: null,
+        hasResults: false
+    };
+
+    const hasSelection = () => Boolean((fileInput.files && fileInput.files.length) || (sampleCheckbox && sampleCheckbox.checked));
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const revokeLocalPreview = () => {
+        if (!state.localPreviewUrl) return;
+        try { URL.revokeObjectURL(state.localPreviewUrl); } catch (err) { /* ignore */ }
+        state.localPreviewUrl = null;
+    };
+
+    const clearVideoElement = (videoEl, placeholder) => {
+        if (!videoEl) return;
+        try { videoEl.pause(); } catch (err) { /* ignore */ }
+        Array.from(videoEl.querySelectorAll('source')).forEach((src) => src.remove());
+        try { videoEl.removeAttribute('src'); } catch (err) { /* ignore */ }
+        videoEl.hidden = true;
+        if (placeholder) placeholder.hidden = false;
+        const wrapper = videoEl.closest('.result-image');
+        if (wrapper) wrapper.dataset.empty = 'true';
+        try { videoEl.load(); } catch (err) { /* ignore */ }
+    };
+
+    const showVideo = (videoEl, placeholder, source) => {
+        if (!videoEl) return;
+        Array.from(videoEl.querySelectorAll('source')).forEach((src) => src.remove());
+        try { videoEl.removeAttribute('src'); } catch (err) { /* ignore */ }
+        if (!source) {
+            clearVideoElement(videoEl, placeholder);
+            return;
+        }
+        const sourceEl = document.createElement('source');
+        sourceEl.src = source;
+        videoEl.appendChild(sourceEl);
+        videoEl.hidden = false;
+        if (placeholder) placeholder.hidden = true;
+        const wrapper = videoEl.closest('.result-image');
+        if (wrapper) wrapper.dataset.empty = 'false';
+        try { videoEl.load(); } catch (err) { /* ignore */ }
+    };
+
+    const resetMetrics = () => {
+        if (framesMetric) framesMetric.textContent = '--';
+        if (durationMetric) durationMetric.textContent = '--';
+        if (fpsMetric) fpsMetric.textContent = '--';
+        if (sizeMetric) sizeMetric.textContent = '-- × --';
+        if (csvMetric) csvMetric.textContent = '--';
+    };
+
+    const formatNumber = (value, digits = 2) => {
+        if (value === null || value === undefined) return null;
+        const num = Number(value);
+        if (!Number.isFinite(num)) return null;
+        return num.toFixed(digits);
+    };
+
+    const updateMetrics = (summary = {}) => {
+        if (framesMetric) framesMetric.textContent = summary.frameCount ?? '--';
+        if (durationMetric) {
+            const formatted = formatNumber(summary.durationSeconds, 2);
+            durationMetric.textContent = formatted ?? '--';
+        }
+        if (fpsMetric) {
+            const formatted = formatNumber(summary.fps, 2);
+            fpsMetric.textContent = formatted ?? '--';
+        }
+        if (sizeMetric) {
+            if (summary.frameWidth && summary.frameHeight) {
+                sizeMetric.textContent = `${summary.frameWidth} × ${summary.frameHeight}`;
+            } else {
+                sizeMetric.textContent = '-- × --';
+            }
+        }
+        if (csvMetric) {
+            const csvCount = summary.csvRowCount ?? summary.recordCount;
+            csvMetric.textContent = csvCount ?? '--';
+        }
+    };
+
+    const resetCsv = () => {
+        if (csvHead) csvHead.innerHTML = '';
+        if (csvBody) csvBody.innerHTML = '';
+        if (csvWrapper) csvWrapper.dataset.empty = 'true';
+        if (csvPlaceholder) csvPlaceholder.hidden = false;
+        if (csvDownload) {
+            csvDownload.hidden = true;
+            csvDownload.href = '#';
+            csvDownload.removeAttribute('download');
+        }
+    };
+
+    const renderCsv = (preview) => {
+        if (!csvHead || !csvBody || !csvWrapper) return;
+        csvHead.innerHTML = '';
+        csvBody.innerHTML = '';
+        if (!preview || !Array.isArray(preview.columns) || !preview.columns.length || !Array.isArray(preview.rows) || !preview.rows.length) {
+            csvWrapper.dataset.empty = 'true';
+            if (csvPlaceholder) csvPlaceholder.hidden = false;
+            return;
+        }
+
+        csvWrapper.dataset.empty = 'false';
+        if (csvPlaceholder) csvPlaceholder.hidden = true;
+
+        const headRow = document.createElement('tr');
+        preview.columns.forEach((col) => {
+            const th = document.createElement('th');
+            th.textContent = col;
+            headRow.appendChild(th);
+        });
+        csvHead.appendChild(headRow);
+
+        preview.rows.forEach((row) => {
+            const tr = document.createElement('tr');
+            preview.columns.forEach((col) => {
+                const td = document.createElement('td');
+                td.textContent = row && row[col] != null ? row[col] : '';
+                tr.appendChild(td);
+            });
+            csvBody.appendChild(tr);
+        });
+    };
+
+    resetMetrics();
+    resetCsv();
+    clearVideoElement(originalVideo, originalPlaceholder);
+    clearVideoElement(annotatedVideo, annotatedPlaceholder);
+    setStatus('Choose a video or enable the sample clip to get started.', 'info');
+    runBtn.disabled = true;
+    resetBtn.disabled = true;
+
+    fileInput.addEventListener('change', () => {
+        revokeLocalPreview();
+        if (fileInput.files && fileInput.files.length) {
+            const file = fileInput.files[0];
+            const url = URL.createObjectURL(file);
+            state.localPreviewUrl = url;
+            showVideo(originalVideo, originalPlaceholder, url);
+            runBtn.disabled = false;
+            resetBtn.disabled = false;
+            setStatus('Ready to run pose tracking.', 'info');
+        } else {
+            clearVideoElement(originalVideo, originalPlaceholder);
+            if (!state.hasResults) resetBtn.disabled = true;
+            runBtn.disabled = !hasSelection();
+            setStatus('Choose a video or enable the sample clip to get started.', 'info');
+        }
+    });
+
+    if (sampleCheckbox) {
+        sampleCheckbox.addEventListener('change', async () => {
+            const token = ++state.sampleToken;
+            if (sampleCheckbox.checked) {
+                fileInput.value = '';
+                fileInput.disabled = true;
+                revokeLocalPreview();
+                clearVideoElement(originalVideo, originalPlaceholder);
+                runBtn.disabled = false;
+                resetBtn.disabled = false;
+                setStatus('Loading sample video preview…', 'info');
+                try {
+                    const resp = await fetch('/api/a7/part2/sample');
+                    const data = await resp.json();
+                    if (token !== state.sampleToken) return;
+                    if (!resp.ok) throw new Error(data.error || 'Failed to load sample');
+                    showVideo(originalVideo, originalPlaceholder, data.video);
+                    setStatus(`Using sample ${data.filename}. Ready to run.`, 'info');
+                } catch (err) {
+                    if (token !== state.sampleToken) return;
+                    setStatus(err.message || 'Failed to load sample.', 'error');
+                    sampleCheckbox.checked = false;
+                    fileInput.disabled = false;
+                    runBtn.disabled = !hasSelection();
+                    if (!state.hasResults) resetBtn.disabled = !hasSelection();
+                }
+            } else {
+                if (token !== state.sampleToken) return;
+                fileInput.disabled = false;
+                if (!hasSelection()) {
+                    clearVideoElement(originalVideo, originalPlaceholder);
+                    runBtn.disabled = true;
+                    if (!state.hasResults) resetBtn.disabled = true;
+                    setStatus('Choose a video or enable the sample clip to get started.', 'info');
+                }
+            }
+        });
+    }
+
+    const performFullReset = () => {
+        form.reset();
+        revokeLocalPreview();
+        state.sampleToken += 1;
+        state.hasResults = false;
+        if (sampleCheckbox) {
+            sampleCheckbox.checked = false;
+            sampleCheckbox.disabled = false;
+        }
+        fileInput.disabled = false;
+        fileInput.value = '';
+        clearVideoElement(originalVideo, originalPlaceholder);
+        clearVideoElement(annotatedVideo, annotatedPlaceholder);
+        resetCsv();
+        resetMetrics();
+        if (downloadArea && downloadLink) {
+            downloadArea.hidden = true;
+            downloadLink.href = '#';
+            downloadLink.removeAttribute('download');
+        }
+        setStatus('Choose a video or enable the sample clip to get started.', 'info');
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+    };
+
+    resetBtn.addEventListener('click', performFullReset);
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!hasSelection()) {
+            setStatus('Please upload a video or enable the sample clip before running.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        if (sampleCheckbox && sampleCheckbox.checked) {
+            formData.append('sample', SAMPLE_FILENAME);
+        } else if (fileInput.files && fileInput.files[0]) {
+            formData.append('video', fileInput.files[0]);
+        } else {
+            setStatus('Please choose a video to continue.', 'error');
+            return;
+        }
+
+        setStatus('Uploading video and running pose tracking…', 'info');
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        fileInput.disabled = true;
+        if (sampleCheckbox) sampleCheckbox.disabled = true;
+
+        try {
+            const response = await fetch('/api/a7/part2', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Process failed');
+
+            revokeLocalPreview();
+            showVideo(originalVideo, originalPlaceholder, data?.original?.video || null);
+            showVideo(annotatedVideo, annotatedPlaceholder, data?.annotated?.video || null);
+
+            if (downloadArea && downloadLink) {
+                if (data?.annotated?.video) {
+                    downloadLink.href = data.annotated.video;
+                    downloadLink.download = data.annotated.filename || 'annotated.mp4';
+                    downloadArea.hidden = false;
+                } else {
+                    downloadLink.href = '#';
+                    downloadLink.removeAttribute('download');
+                    downloadArea.hidden = true;
+                }
+            }
+
+            if (csvDownload && data?.csv?.dataUrl) {
+                csvDownload.href = data.csv.dataUrl;
+                csvDownload.download = data.csv.filename || 'pose-landmarks.csv';
+                csvDownload.hidden = false;
+            } else if (csvDownload) {
+                csvDownload.hidden = true;
+                csvDownload.href = '#';
+                csvDownload.removeAttribute('download');
+            }
+
+            renderCsv(data?.csv?.preview || null);
+            updateMetrics(data?.summary || {});
+            if (csvMetric && data?.csv?.rowCount != null) {
+                csvMetric.textContent = data.csv.rowCount;
+            }
+
+            state.hasResults = true;
+            resetBtn.disabled = false;
+            setStatus(data.message || 'Pose estimation complete.', 'success');
+        } catch (err) {
+            setStatus(err.message || 'Unexpected error occurred.', 'error');
+        } finally {
+            runBtn.disabled = !hasSelection();
+            if (sampleCheckbox) {
+                sampleCheckbox.disabled = false;
+                fileInput.disabled = sampleCheckbox.checked;
+            } else {
+                fileInput.disabled = false;
+            }
+            if (!state.hasResults && !hasSelection()) {
+                resetBtn.disabled = true;
+            }
+        }
+    });
+
+    form.__module7Reset = performFullReset;
+}
+
 /*
  * Global reset button - clears state across modules and UI.
  * Click the existing reset/clear buttons (if available) so module-specific
@@ -917,6 +1257,11 @@ function initGlobalReset() {
                 try { formEl.__module4Reset({ clearServer: true }); } catch (err) { /* ignore */ }
             }
         });
+
+        const m7Form = document.getElementById('module7-part2-form');
+        if (m7Form && typeof m7Form.__module7Reset === 'function') {
+            try { m7Form.__module7Reset(); } catch (err) { /* ignore */ }
+        }
 
         // Clear any run outputs in simple modules (3, 4, 5-6, 7) and additional UI elements
         ['a3', 'a4', 'a56', 'a7'].forEach((id) => {

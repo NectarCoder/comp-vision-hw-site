@@ -4,7 +4,7 @@ import argparse
 import csv
 import sys
 from pathlib import Path
-from typing import Dict, Iterable, List
+from typing import Dict, Iterable, List, Optional
 
 import cv2
 import mediapipe as mp
@@ -74,7 +74,7 @@ def _initialize_frame_record(fieldnames: List[str]) -> Dict[str, float]:
     return {field: None for field in fieldnames}
 
 
-def _run_estimation(video_path: Path, display: bool) -> Path:
+def _run_estimation(video_path: Path, display: bool, annotated_output_path: Optional[Path] = None) -> Dict[str, object]:
     if not video_path.exists():
         raise FileNotFoundError(f"Video file not found: {video_path}")
 
@@ -83,8 +83,15 @@ def _run_estimation(video_path: Path, display: bool) -> Path:
         raise RuntimeError(f"Unable to open video file: {video_path}")
 
     fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    fps_safe = fps if fps and fps > 0 else 30.0
     fieldnames = _build_fieldnames()
     records: List[Dict[str, float]] = []
+    frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    annotated_path = Path(annotated_output_path) if annotated_output_path else None
+    video_writer = None
+    if annotated_path:
+        annotated_path.parent.mkdir(parents=True, exist_ok=True)
 
     mp_pose = mp.solutions.pose
     mp_hands = mp.solutions.hands
@@ -123,6 +130,9 @@ def _run_estimation(video_path: Path, display: bool) -> Path:
                 success, frame = cap.read()
                 if not success:
                     break
+
+                if frame_width <= 0 or frame_height <= 0:
+                    frame_height, frame_width = frame.shape[:2]
 
                 frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
                 frame_rgb.flags.writeable = False
@@ -166,11 +176,13 @@ def _run_estimation(video_path: Path, display: bool) -> Path:
 
                 records.append(record)
 
-                if display:
-                    annotated = frame.copy()
+                should_draw = display or annotated_path is not None
+                annotated_frame = None
+                if should_draw:
+                    annotated_frame = frame.copy()
                     if pose_results.pose_landmarks:
                         mp_drawing.draw_landmarks(
-                            annotated,
+                            annotated_frame,
                             pose_results.pose_landmarks,
                             mp_pose.POSE_CONNECTIONS,
                             landmark_drawing_spec=pose_landmark_spec,
@@ -179,30 +191,48 @@ def _run_estimation(video_path: Path, display: bool) -> Path:
                     if hands_results.multi_hand_landmarks:
                         for hand_landmarks in hands_results.multi_hand_landmarks:
                             mp_drawing.draw_landmarks(
-                                annotated,
+                                annotated_frame,
                                 hand_landmarks,
                                 mp_hands.HAND_CONNECTIONS,
                                 landmark_drawing_spec=hand_landmark_spec,
                                 connection_drawing_spec=hand_connection_spec,
                             )
 
-                    cv2.putText(
-                        annotated,
-                        "Press 'q' to quit",
-                        (10, 30),
-                        cv2.FONT_HERSHEY_SIMPLEX,
-                        0.8,
-                        (0, 255, 0),
-                        2,
-                        cv2.LINE_AA,
-                    )
-                    cv2.imshow("Pose and Hand Tracking", annotated)
-                    if cv2.waitKey(1) & 0xFF == ord("q"):
-                        break
+                    if annotated_path and video_writer is None:
+                        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+                        video_writer = cv2.VideoWriter(
+                            str(annotated_path),
+                            fourcc,
+                            fps_safe,
+                            (frame_width or frame.shape[1], frame_height or frame.shape[0]),
+                        )
+                        if not video_writer.isOpened():
+                            video_writer.release()
+                            video_writer = None
+
+                    if video_writer is not None:
+                        video_writer.write(annotated_frame)
+
+                    if display:
+                        cv2.putText(
+                            annotated_frame,
+                            "Press 'q' to quit",
+                            (10, 30),
+                            cv2.FONT_HERSHEY_SIMPLEX,
+                            0.8,
+                            (0, 255, 0),
+                            2,
+                            cv2.LINE_AA,
+                        )
+                        cv2.imshow("Pose and Hand Tracking", annotated_frame)
+                        if cv2.waitKey(1) & 0xFF == ord("q"):
+                            break
 
                 frame_index += 1
         finally:
             cap.release()
+            if video_writer is not None:
+                video_writer.release()
             if display:
                 cv2.destroyAllWindows()
 
@@ -212,17 +242,44 @@ def _run_estimation(video_path: Path, display: bool) -> Path:
         writer.writeheader()
         writer.writerows(records)
 
-    return output_path
+    duration = frame_index / fps if fps > 0 else None
+    result = {
+        "csv_path": output_path,
+        "record_count": len(records),
+        "frame_count": frame_index,
+        "frame_width": frame_width,
+        "frame_height": frame_height,
+        "fps": fps,
+        "duration_seconds": duration,
+        "annotated_video_path": annotated_path if annotated_path and annotated_path.exists() else None,
+    }
+    return result
 
 
 def main(argv: Iterable[str]) -> None:
     args = _parse_args(argv)
     try:
-        output_path = _run_estimation(args.video_path, args.display)
+        result = _run_estimation(args.video_path, args.display)
     except (FileNotFoundError, RuntimeError) as exc:
         raise SystemExit(str(exc))
 
-    print(f"Pose and hand landmarks saved to {output_path}")
+    output_path = result.get("csv_path")
+    if output_path:
+        print(f"Pose and hand landmarks saved to {output_path}")
+    annotated_path = result.get("annotated_video_path")
+    if annotated_path:
+        print(f"Annotated video exported to {annotated_path}")
+
+
+def run_pose_and_hand_tracking(
+    video_path: Path,
+    *,
+    display: bool = False,
+    annotated_output_path: Optional[Path] = None,
+) -> Dict[str, object]:
+    """Programmatic helper so other modules (e.g., Flask app) can reuse this pipeline."""
+
+    return _run_estimation(video_path, display=display, annotated_output_path=annotated_output_path)
 
 
 if __name__ == "__main__":

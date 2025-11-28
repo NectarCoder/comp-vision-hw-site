@@ -357,6 +357,7 @@ function initModule56Flow() {
 
     let hasResults = false;
     let createdBlobUrl = null;
+    let samplePreviewToken = 0;
 
     const setStatus = (message, variant = 'info') => {
         statusLine.textContent = message;
@@ -364,11 +365,14 @@ function initModule56Flow() {
     };
 
     const clearVideoElement = (vidEl, placeholder) => {
+        if (!vidEl) return;
+        try { vidEl.pause(); } catch (e) { /* ignore invalid states */ }
+        try { vidEl.removeAttribute('src'); } catch (e) { /* ignore */ }
+        // Remove any dynamically injected <source> tags so the element fully resets
         try {
-            vidEl.pause();
-            vidEl.removeAttribute('src');
-            vidEl.load();
-        } catch (e) { /* ignore invalid states */ }
+            Array.from(vidEl.querySelectorAll('source')).forEach(src => src.remove());
+        } catch (e) { /* ignore */ }
+        try { vidEl.load(); } catch (e) { /* ignore */ }
         vidEl.hidden = true;
         if (placeholder) placeholder.hidden = false;
     };
@@ -420,6 +424,8 @@ function initModule56Flow() {
     if (useSampleCheckbox) {
         useSampleCheckbox.addEventListener('change', async () => {
             const checked = useSampleCheckbox.checked;
+            const requestToken = ++samplePreviewToken;
+
             if (checked) {
                 fileInput.value = '';
                 fileInput.disabled = true;
@@ -430,9 +436,11 @@ function initModule56Flow() {
                     const resp = await fetch('/api/a56/part1/sample');
                     const data = await resp.json();
                     if (!resp.ok) throw new Error(data.error || 'Failed to load sample');
+                    if (requestToken !== samplePreviewToken) return; // user toggled off mid-fetch
                     showVideo(inputVideo, inputPlaceholder, data.video);
                     setStatus(`Using sample ${data.filename}. Ready to run.`, 'info');
                 } catch (err) {
+                    if (requestToken !== samplePreviewToken) return;
                     fileInput.disabled = false;
                     useSampleCheckbox.checked = false;
                     setStatus(`Could not load sample: ${err.message}`, 'error');
@@ -440,8 +448,8 @@ function initModule56Flow() {
             } else {
                 fileInput.disabled = false;
                 clearVideoElement(inputVideo, inputPlaceholder);
-                runBtn.disabled = true;
-                resetBtn.disabled = true;
+                runBtn.disabled = !hasSelected();
+                resetBtn.disabled = !hasResults;
                 setStatus('Choose a video to get started.', 'info');
             }
         });

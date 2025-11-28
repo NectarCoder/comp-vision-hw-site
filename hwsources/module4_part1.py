@@ -186,11 +186,5 @@ def main():
     cv2.imwrite(output_path, panorama)
     print(f"Final panorama image has been saved to :- {output_path}")
 
-    # If the result is bigger than screen width then we are downscaling it
-    if panorama.shape[1] > 1800: panorama = resize_image(panorama, target_width=1800)
-    cv2.imshow("Panorama", panorama)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
-
 if __name__ == "__main__":
     main()

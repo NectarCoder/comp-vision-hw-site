@@ -18,6 +18,14 @@ import cv2
 import mediapipe as mp
 
 
+def _call_with_fallback(module, attr: str, fallback):
+	"""Return callable attribute from module or a fallback drawing spec."""
+	fn = getattr(module, attr, None)
+	if callable(fn):
+		return fn()
+	return fallback
+
+
 def _parse_args(argv: Iterable[str]) -> argparse.Namespace:
 	parser = argparse.ArgumentParser(
 		description="Pose and hand landmark extraction with optional visualization.",
@@ -91,6 +99,26 @@ def _run_estimation(video_path: Path, display: bool) -> Path:
 	mp_hands = mp.solutions.hands
 	mp_drawing = mp.solutions.drawing_utils
 	mp_drawing_styles = mp.solutions.drawing_styles
+	pose_landmark_spec = _call_with_fallback(
+		mp_drawing_styles,
+		"get_default_pose_landmarks_style",
+		mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2, circle_radius=2),
+	)
+	pose_connection_spec = _call_with_fallback(
+		mp_drawing_styles,
+		"get_default_pose_connection_style",
+		mp_drawing.DrawingSpec(color=(0, 255, 0), thickness=2),
+	)
+	hand_landmark_spec = _call_with_fallback(
+		mp_drawing_styles,
+		"get_default_hand_landmarks_style",
+		mp_drawing.DrawingSpec(color=(255, 0, 0), thickness=2, circle_radius=2),
+	)
+	hand_connection_spec = _call_with_fallback(
+		mp_drawing_styles,
+		"get_default_hand_connections_style",
+		mp_drawing.DrawingSpec(color=(255, 0, 0), thickness=2),
+	)
 
 	with mp_pose.Pose(model_complexity=1, enable_segmentation=False) as pose, mp_hands.Hands(
 		static_image_mode=False,
@@ -154,8 +182,8 @@ def _run_estimation(video_path: Path, display: bool) -> Path:
 							annotated,
 							pose_results.pose_landmarks,
 							mp_pose.POSE_CONNECTIONS,
-							landmark_drawing_spec=mp_drawing_styles.get_default_pose_landmarks_style(),
-							connection_drawing_spec=mp_drawing_styles.get_default_pose_connection_style(),
+							landmark_drawing_spec=pose_landmark_spec,
+							connection_drawing_spec=pose_connection_spec,
 						)
 					if hands_results.multi_hand_landmarks:
 						for hand_landmarks in hands_results.multi_hand_landmarks:
@@ -163,8 +191,8 @@ def _run_estimation(video_path: Path, display: bool) -> Path:
 								annotated,
 								hand_landmarks,
 								mp_hands.HAND_CONNECTIONS,
-								landmark_drawing_spec=mp_drawing_styles.get_default_hand_landmarks_style(),
-								connection_drawing_spec=mp_drawing_styles.get_default_hand_connections_style(),
+								landmark_drawing_spec=hand_landmark_spec,
+								connection_drawing_spec=hand_connection_spec,
 							)
 
 					cv2.putText(

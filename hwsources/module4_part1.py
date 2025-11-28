@@ -28,192 +28,167 @@ import os
 import sys
 import re
 
-sys.setrecursionlimit(2000)
+# Global constants
+WORK_WIDTH = 800 # Images will be downscaled to this work width for making the feature detection process faster
+SEAM_EROSION_ITERATIONS = 1 # Will be used for removing the thin black border lines at the edges of each picture
 
-# --- CONFIGURATION ---
-WORK_WIDTH = 800
-# Higher values remove thicker lines but might eat into image details. 1 or 2 is usually enough.
-SEAM_EROSION_ITERATIONS = 1 
+sys.setrecursionlimit(2000) # Increasing allowed depth for recusion (directory traversal, etc)
 
-def resize_image(image, width=None):
-    (h, w) = image.shape[:2]
-    if width is None:
-        return image
-    r = width / float(w)
-    dim = (width, int(h * r))
-    return cv2.resize(image, dim, interpolation=cv2.INTER_AREA)
+# Image resizing helper method
+def resize_image(image, target_width=None):
+    if target_width is None: return image # If user has not defined a target width, then return immediately
+    (original_height, original_width) = image.shape[:2]
+    ratio = target_width / float(original_width)
+    dimensions = (target_width, int(original_height * ratio))
+    return cv2.resize(image, dimensions, interpolation=cv2.INTER_AREA) # INTER_AREA is best especially when shrinking the image
 
-def natural_sort_key(s):
-    return [int(text) if text.isdigit() else text.lower()
-            for text in re.split('([0-9]+)', s)]
+# Sorts numbers strings in proper order instead of first digit order (1, 2, 10 vs. 1, 10, 2)
+def correct_number_sorting(s):
+    return [int(text) if text.isdigit() else text.lower() for text in re.split('([0-9]+)', s)]
 
-def detect_and_describe(image):
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    # Using slightly higher contrast threshold for cleaner features on grass/trees
-    sift = cv2.SIFT_create(contrastThreshold=0.03)
-    kps, features = sift.detectAndCompute(gray, None)
-    return kps, features
+# Extracts SIFT keypoints and descriptors from an image
+def extract_sift_keypoints_descriptors(image):
+    grayscale = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) # Grayscale conversion
+    sift = cv2.SIFT_create(contrastThreshold=0.03) # Will capture features in areas of low contrast (e.g. grass/sky)
+    keypoints, features = sift.detectAndCompute(grayscale, None)
+    return keypoints, features
 
-def match_keypoints_affine(kpsA, kpsB, featuresA, featuresB, ratio=0.75):
-    matcher = cv2.BFMatcher()
-    raw_matches = matcher.knnMatch(featuresA, featuresB, k=2)
-    
+# Matches keypoints and features and calculates Affine transformation matrix
+def match_keypoints_affine(keypointsA, keypointsB, featuresA, featuresB, ratio=0.75):
     matches = []
-    for m, n in raw_matches:
-        if m.distance < ratio * n.distance:
-            matches.append(m)
+    matcher = cv2.BFMatcher()
+    raw_matches = matcher.knnMatch(featuresA, featuresB, k=2) # Retrieving the top k matches
+    # Keep the "best match" only if there's enough difference between "best" and "second best" matches
+    for best_match, second_best_match in raw_matches:
+        if best_match.distance < ratio * second_best_match.distance:
+            matches.append(best_match)
 
-    if len(matches) > 4:
-        ptsA = np.float32([kpsA[m.queryIdx].pt for m in matches])
-        ptsB = np.float32([kpsB[m.trainIdx].pt for m in matches])
-        
-        # Use Affine Estimation (Rigid + Scale) for stability
-        (M, inliers) = cv2.estimateAffinePartial2D(ptsA, ptsB)
-        
-        if M is None: return None
-
-        # Convert to 3x3 for matrix multiplication
-        H = np.vstack([M, [0, 0, 1]])
+    if len(matches) > 4: # To compute the Affine transformation we need at least 4 matches
+        pointsA = np.float32([keypointsA[match.queryIdx].pt for match in matches]) # Getting the points location from matches
+        pointsB = np.float32([keypointsB[match.trainIdx].pt for match in matches])
+        matrix, _ = cv2.estimateAffinePartial2D(pointsA, pointsB) # Estimation of affine transformation (rotation, translation, scaling)
+        if matrix is None: return None
+        homography = np.vstack([matrix, [0, 0, 1]]) # Conversion of 2x3 affine matrix to 3x3 homography format
         status = np.ones(len(matches), dtype=np.uint8)
-        return (matches, H, status)
-    
+        return (matches, homography, status)
     return None
 
-def crop_black_borders(panorama):
-    if panorama is None or panorama.size == 0: return None
-    gray = cv2.cvtColor(panorama, cv2.COLOR_BGR2GRAY)
-    _, thresh = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
-    # Apply a little dilation to the threshold to ensure we don't cut off valid dark pixels
-    kernel = np.ones((5,5), np.uint8)
-    thresh = cv2.dilate(thresh, kernel, iterations=2)
-    coords = cv2.findNonZero(thresh)
-    if coords is None: return panorama
-    x, y, w, h = cv2.boundingRect(coords)
-    return panorama[y:y+h, x:x+w]
+# Removing the black borders from the stitched image
+def remove_black_borders(panorama):
+    if panorama is None or panorama.size == 0: return None # If panorama is null or invalid
+    grayscale = cv2.cvtColor(panorama, cv2.COLOR_BGR2GRAY) # Grayscale conversion
+    _, threshold = cv2.threshold(grayscale, 1, 255, cv2.THRESH_BINARY) # Creating the binary mask (non-black pixel)
+    kernel = np.ones((5,5), np.uint8) #Dilating the mask a little to make sure valid dark edges aren't removed
+    threshold = cv2.dilate(threshold, kernel, iterations=2)
+    coordinates = cv2.findNonZero(threshold) # Get all the coordinate pairs of valid pixels to find the crop area
+    if coordinates is None: return panorama
+    x, y, width, height = cv2.boundingRect(coordinates)
+    return panorama[y:y+height, x:x+width]
 
+# Main function
 def main():
-    print("=== Assignment 4: Final Polished Stitching ===")
-    
-    # --- 1. Load Images ---
-    # Accept optional cli arg (absolute or relative path), otherwise prompt.
-    if len(sys.argv) > 1:
+    if len(sys.argv) > 1: # Handling CLI arguments or regular user input
         provided_path = sys.argv[1]
-        print(f"Using path from command-line argument: {provided_path}")
     else:
-        provided_path = input("Enter path to image folder (absolute or relative): ").strip()
+        provided_path = input("Please enter the image folder path (8 portrait images) :- ").strip()
 
-    # resolve to an absolute path relative to current working directory
+    # Handling relative paths, current working directory, or script directory
     provided_path = os.path.expanduser(provided_path)
-    if provided_path == "":
-        # Default to the current working directory if nothing provided
-        provided_path = os.getcwd()
-    img_dir = os.path.abspath(provided_path)
+    if provided_path == "": provided_path = os.getcwd()
+    image_folder = os.path.abspath(provided_path)
 
-    if not os.path.isdir(img_dir):
-        # If not found relative to CWD, also attempt relative to the script directory
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        alt_img_dir = os.path.abspath(os.path.join(script_dir, provided_path))
-        if os.path.isdir(alt_img_dir):
-            img_dir = alt_img_dir
+    # Checking if the path exists
+    if not os.path.isdir(image_folder):
+        script_directory = os.path.dirname(os.path.abspath(__file__))
+        alt_image_directory = os.path.abspath(os.path.join(script_directory, provided_path))
+        if os.path.isdir(alt_image_directory):
+            image_folder = alt_image_directory
         else:
-            print(f"[ERROR] Directory not found: {img_dir} (also tried {alt_img_dir})")
+            print(f"The folder was not found at this path :- {image_folder}")
             return
 
-    print("Loading images...")
-    image_paths = glob.glob(os.path.join(img_dir, "*"))
-    image_paths.sort(key=natural_sort_key)
-    
+    # Loading all the images
+    print(f"Loading the images from the folder {image_folder}")
+    image_paths = glob.glob(os.path.join(image_folder, "*"))
+    image_paths.sort(key=correct_number_sorting) # Sorting all the files    
     original_images = [cv2.imread(p) for p in image_paths if p.lower().endswith(('.png', '.jpg', '.jpeg'))]
-    original_images = [img for img in original_images if img is not None]
+    original_images = [image for image in original_images if image is not None]
     
-    if len(original_images) < 2:
-        print("[ERROR] Need at least 2 images.")
+    # Should be at least 4 images
+    if len(original_images) < 4:
+        print("Please provide at least 4 images (landscape) or 8 (portrait)")
         return
-
-    # Assuming standard Left->Right name order based on previous conversation
     print(f"Processing {len(original_images)} images...")
-    images = [resize_image(img, width=WORK_WIDTH) for img in original_images]
-    
-    # --- 2. Compute Transforms ---
-    homographies = [np.identity(3)]
-    
-    for i in range(len(images) - 1):
-        print(f"Aligning Image {i+2} to {i+1}...")
-        kps_prev, feats_prev = detect_and_describe(images[i])
-        kps_curr, feats_curr = detect_and_describe(images[i+1])
 
-        result = match_keypoints_affine(kps_curr, kps_prev, feats_curr, feats_prev)
-
+    # Resizing the images to reduce computational costs
+    images = [resize_image(image, target_width=WORK_WIDTH) for image in original_images]
+    homographies = [np.identity(3)] # Initial homographies - identity matrix for first image
+    for i in range(len(images) - 1): # Calculation of relative homographies between adjacent pairs
+        print(f"Aligning the image {i+2} with {i+1}")
+        keypoints_previous, feats_previous = extract_sift_keypoints_descriptors(images[i])
+        keypoints_current, feats_current = extract_sift_keypoints_descriptors(images[i+1])
+        result = match_keypoints_affine(keypoints_current, keypoints_previous, feats_current, feats_previous)
         if result is None:
-            print(f"[ERROR] Could not align Image {i+1} and {i+2}.")
+            print(f"Unable to align the image {i+1} with {i+2}")
             return
-        
-        (_, H_curr_to_prev, _) = result
-        homographies.append(homographies[i].dot(H_curr_to_prev))
+        # Chaining the homographies together relative to first image
+        (_, homography_current_to_previous, _) = result
+        homographies.append(homographies[i].dot(homography_current_to_previous))
 
-    # --- 3. Re-Center & Canvas ---
-    print("Calculating optimal canvas...")
-    mid_idx = len(images) // 2
-    H_mid_to_0 = homographies[mid_idx]
-    H_0_to_mid = np.linalg.inv(H_mid_to_0)
-
+    # Recalculating the homographies relative to the center image - minimizing distortions
+    middle_index = len(images) // 2
+    homography_middle_to_0 = homographies[middle_index]
+    homography_0_to_middle = np.linalg.inv(homography_middle_to_0)
     new_homographies = []
     all_corners = []
-    for i, H in enumerate(homographies):
-        H_new = H_0_to_mid.dot(H)
-        new_homographies.append(H_new)
-        h, w = images[i].shape[:2]
-        corners = np.float32([[0, 0], [0, h], [w, h], [w, 0]]).reshape(-1, 1, 2)
-        all_corners.append(cv2.perspectiveTransform(corners, H_new))
+    
+    # Transforming all images' corners to determine total size of final panorama
+    for i, homography in enumerate(homographies):
+        new_homography = homography_0_to_middle.dot(homography) # Retarget to center image
+        new_homographies.append(new_homography)
+        height, width = images[i].shape[:2]
+        corners = np.float32([[0, 0], [0, height], [width, height], [width, 0]]).reshape(-1, 1, 2)
+        all_corners.append(cv2.perspectiveTransform(corners, new_homography))
 
+    # Calculation of canvas size
+    print("Calculating canvas size")
     all_corners = np.concatenate(all_corners, axis=0)
-    x_min, y_min = np.int32(all_corners.min(axis=0).ravel())
-    x_max, y_max = np.int32(all_corners.max(axis=0).ravel())
-    output_width, output_height = x_max - x_min, y_max - y_min
-    
-    print(f"Final Size: {output_width} x {output_height}")
+    x_minimum, y_minimum = np.int32(all_corners.min(axis=0).ravel())
+    x_maximum, y_maximum = np.int32(all_corners.max(axis=0).ravel())
+    output_width, output_height = x_maximum - x_minimum, y_maximum - y_minimum
+    print(f"Canvas size will be :- {output_width} x {output_height}")
 
-    # --- 4. Stitching with Seam Fix ---
-    print("Stitching and blending seams...")
-    H_translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
+    print("Stitching images together")
+    # Shifting any of the negative coordinate values into positive valuses
+    homography_translation = np.array([[1, 0, -x_minimum], [0, 1, -y_minimum], [0, 0, 1]])
     panorama = np.zeros((output_height, output_width, 3), dtype=np.uint8)
-    
-    # Kernel for eroding the edge of images to remove dark borders
-    erosion_kernel = np.ones((3, 3), np.uint8)
+    erosion_kernel = np.ones((3, 3), np.uint8) # 3x3 matrix used to shave the outer edge
+    # Order is to draw outer images first and move towards the center
+    # Middle image (also the least distorted one) is placed last on top
+    draw_order = sorted(range(len(images)), key=lambda x: abs(x - middle_index), reverse=True)
 
-    # Draw from extremities inwards to center
-    draw_order = sorted(range(len(images)), key=lambda x: abs(x - mid_idx), reverse=True)
-
+    # Iterating through the images in the order defined earlier
     for i in draw_order:
-        img = images[i]
-        H_final = H_translation.dot(new_homographies[i])
-        
-        # Use INTER_LINEAR for smoother warping
-        warped = cv2.warpPerspective(img, H_final, (output_width, output_height), flags=cv2.INTER_LINEAR)
-        
-        # Create mask and ERODE it to shave off dark edges
-        gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
-        _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
-        
-        # --- THE FIX IS HERE ---
-        # Shrink the mask slightly so we don't copy the dark interpolation border
-        mask = cv2.erode(mask, erosion_kernel, iterations=SEAM_EROSION_ITERATIONS)
-        
-        # Copy valid pixels based on eroded mask
-        panorama[mask > 0] = warped[mask > 0]
+        image = images[i]
+        final_homography = homography_translation.dot(new_homographies[i]) # Combination of image alignment matrix and canvas centering matrix
+        warped = cv2.warpPerspective(image, final_homography, (output_width, output_height), flags=cv2.INTER_LINEAR) # Transforming image from local coordinates into final panorama's coordinates
+        grayscale = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY) # Grayscale conversion
+        _, mask = cv2.threshold(grayscale, 1, 255, cv2.THRESH_BINARY) # # Generating binary mask of the warped & grayscaled image
+        mask = cv2.erode(mask, erosion_kernel, iterations=SEAM_EROSION_ITERATIONS) # Getting rid of 1 px from the edges (removing dark border lines)
+        panorama[mask > 0] = warped[mask > 0] # Overlaying the proper pixels from the image into the panorama
 
-    # --- 5. Finish ---
-    print("Cropping...")
-    panorama = crop_black_borders(panorama)
+    # Removing the black borders from the edges
+    print("Trimming panorama image")
+    panorama = remove_black_borders(panorama)
     
-    output_path = os.path.join(img_dir, "stitched_result_final.jpg")
+    # Saving the final panorama
+    output_path = os.path.join(image_folder, "stitched_result_final.jpg")
     cv2.imwrite(output_path, panorama)
-    print(f"Saved: {output_path}")
+    print(f"Final panorama image has been saved to :- {output_path}")
 
-    if panorama.shape[1] > 1800:
-        panorama = resize_image(panorama, width=1800)
-    
-    cv2.imshow("Final Result", panorama)
+    # If the result is bigger than screen width then we are downscaling it
+    if panorama.shape[1] > 1800: panorama = resize_image(panorama, target_width=1800)
+    cv2.imshow("Panorama", panorama)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
 

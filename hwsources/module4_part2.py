@@ -30,7 +30,6 @@ import numpy as np
 import glob
 import os
 import re
-import matplotlib.pyplot as plt
 
 # --- CONFIGURATION ---
 WORK_WIDTH = 400 
@@ -430,13 +429,14 @@ def run_stitching_opencv(images):
 
 def main():
     relative_img_dir = input("Enter path to image folder: ").strip()
-    if not os.path.exists(relative_img_dir):
+    image_dir = os.path.abspath(relative_img_dir)
+    if not os.path.exists(image_dir):
         print("Folder not found.")
         return
 
     # Load and Resize
     # Added print to verify order
-    image_paths = sorted(glob.glob(os.path.join(relative_img_dir, "*")), key=lambda s: natural_sort_key(s))
+    image_paths = sorted(glob.glob(os.path.join(image_dir, "*")), key=lambda s: natural_sort_key(s))
     print(f"Loading {len(image_paths)} images in order:")
     for p in image_paths:
         print(f" - {os.path.basename(p)}")
@@ -457,21 +457,21 @@ def main():
     # Run OpenCV
     res_opencv = run_stitching_opencv(images)
 
-    # Show results
-    plt.figure(figsize=(12, 8))
-    plt.subplot(2, 1, 1)
-    plt.title("Custom Stitch (Affine RANSAC)")
-    if res_custom is not None: plt.imshow(cv2.cvtColor(res_custom, cv2.COLOR_BGR2RGB))
-    else: plt.text(0.5, 0.5, "Failed", ha='center')
-    plt.axis('off')
-    
-    plt.subplot(2, 1, 2)
-    plt.title("OpenCV Stitch (Affine RANSAC)")
-    if res_opencv is not None: plt.imshow(cv2.cvtColor(res_opencv, cv2.COLOR_BGR2RGB))
-    plt.axis('off')
-    
-    plt.tight_layout()
-    plt.show()
+    # Save results without opening any GUI windows
+    custom_output = os.path.join(image_dir, "stitched_custom_affine.jpg")
+    opencv_output = os.path.join(image_dir, "stitched_opencv_affine.jpg")
+
+    if res_custom is not None:
+        cv2.imwrite(custom_output, res_custom)
+        print(f"Custom stitch saved to {custom_output}")
+    else:
+        print("Custom stitching failed; no image saved.")
+
+    if res_opencv is not None:
+        cv2.imwrite(opencv_output, res_opencv)
+        print(f"OpenCV stitch saved to {opencv_output}")
+    else:
+        print("OpenCV stitching failed; no image saved.")
 
 if __name__ == "__main__":
     main()

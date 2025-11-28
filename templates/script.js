@@ -130,7 +130,6 @@ function switchTab(tabId) {
         toggleBtn.setAttribute('aria-expanded', String(!expanded));
 
         // Support both source and video toggle buttons. Choose the
-        // correct label text depending on the button type.
         const isVideo = toggleBtn.classList.contains('video-toggle');
         const isInstructions = toggleBtn.classList.contains('instructions-toggle');
         // toggle open state using a CSS class so transitions (opacity/height)
@@ -1613,6 +1612,7 @@ function initModule4Flow() {
             countId: 'module4-part1-count',
             sizeId: 'module4-part1-size',
             downloadId: 'module4-part1-download',
+            sampleBtnId: 'module4-part1-sample',
             endpoint: '/api/a4/part1',
             clearEndpoint: '/api/a4/part1/results',
             readyMessage: 'Ready to stitch with the OpenCV pipeline.',
@@ -1632,6 +1632,7 @@ function initModule4Flow() {
             countId: 'module4-part2-count',
             sizeId: 'module4-part2-size',
             downloadId: 'module4-part2-download',
+            sampleBtnId: 'module4-part2-sample',
             endpoint: '/api/a4/part2',
             clearEndpoint: '/api/a4/part2/results',
             readyMessage: 'Ready to run the scratch-built stitcher.',
@@ -1662,12 +1663,13 @@ function setupModule4Part(config) {
         return;
     }
 
+    const sampleBtn = document.getElementById(config.sampleBtnId);
     const selectionDefault = selectionEl.innerHTML;
     const placeholderDefault = placeholder.textContent;
     const defaultStatus = statusLine.textContent || 'Upload 8+ portrait frames to enable stitching.';
     const readyMessage = config.readyMessage || 'Ready to stitch.';
     const uploadMessage = config.uploadMessage || 'Uploading images and stitching…';
-    const state = { hasResults: false, downloadUrl: null };
+    const state = { hasResults: false, downloadUrl: null, useSample: false, sampleFiles: [] };
 
     const setStatus = (message, variant = 'info') => {
         if (!statusLine) return;
@@ -1675,35 +1677,60 @@ function setupModule4Part(config) {
         statusLine.dataset.variant = variant;
     };
 
+    const currentFileCount = () => (state.useSample ? state.sampleFiles.length : (fileInput.files ? fileInput.files.length : 0));
+
     const resetSelection = () => {
         selectionEl.dataset.empty = 'true';
         selectionEl.innerHTML = selectionDefault || '<p>No images selected yet.</p>';
     };
 
-    const updateSelection = () => {
-        const files = Array.from(fileInput.files || []);
-        if (!files.length) {
-            resetSelection();
-            runBtn.disabled = true;
-            resetBtn.disabled = !state.hasResults;
-            return;
-        }
-
+    const renderFileList = (entries, note) => {
         selectionEl.dataset.empty = 'false';
         selectionEl.innerHTML = '';
+        if (note) {
+            const noteEl = document.createElement('p');
+            noteEl.className = 'module4-selection__note';
+            noteEl.textContent = note;
+            selectionEl.appendChild(noteEl);
+        }
         const list = document.createElement('ol');
         list.className = 'module4-file-list';
-        files.forEach((file, index) => {
+        entries.forEach((name, index) => {
             const item = document.createElement('li');
-            item.textContent = `${index + 1}. ${file.name}`;
+            item.textContent = `${index + 1}. ${name}`;
             list.appendChild(item);
         });
         selectionEl.appendChild(list);
+    };
 
-        runBtn.disabled = files.length < MODULE4_MIN_IMAGES;
-        if (!state.hasResults) {
-            resetBtn.disabled = false;
+    const refreshButtons = () => {
+        const count = currentFileCount();
+        runBtn.disabled = count < MODULE4_MIN_IMAGES;
+        resetBtn.disabled = !(count || state.hasResults);
+    };
+
+    const clearSampleMode = () => {
+        if (!state.useSample) return;
+        state.useSample = false;
+        state.sampleFiles = [];
+    };
+
+    const updateSelection = () => {
+        if (state.useSample && state.sampleFiles.length) {
+            renderFileList(state.sampleFiles, `Example dataset (${state.sampleFiles.length} images)`);
+            refreshButtons();
+            return;
         }
+
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) {
+            resetSelection();
+            refreshButtons();
+            return;
+        }
+
+        renderFileList(files.map((file) => file.name));
+        refreshButtons();
     };
 
     const clearOutput = () => {
@@ -1721,6 +1748,7 @@ function setupModule4Part(config) {
     const performReset = ({ clearServer = true, keepStatus = false } = {}) => {
         form.reset();
         try { fileInput.value = ''; } catch (err) { /* ignore readonly errors */ }
+        clearSampleMode();
         clearOutput();
         updateSelection();
         runBtn.disabled = true;
@@ -1742,9 +1770,7 @@ function setupModule4Part(config) {
     };
 
     const updateButtonsAfterSubmit = () => {
-        const fileCount = fileInput.files ? fileInput.files.length : 0;
-        runBtn.disabled = fileCount < MODULE4_MIN_IMAGES;
-        resetBtn.disabled = !(fileCount || state.hasResults);
+        refreshButtons();
     };
 
     const showResult = (payload, fileCount) => {
@@ -1767,14 +1793,43 @@ function setupModule4Part(config) {
     };
 
     fileInput.addEventListener('change', () => {
+        if (state.useSample) {
+            clearSampleMode();
+        }
         updateSelection();
-        const count = fileInput.files ? fileInput.files.length : 0;
+        const count = currentFileCount();
         if (count >= MODULE4_MIN_IMAGES) {
             setStatus(readyMessage, 'info');
         } else {
             setStatus(defaultStatus, 'info');
         }
     });
+
+    if (sampleBtn) {
+        sampleBtn.addEventListener('click', async () => {
+            sampleBtn.disabled = true;
+            setStatus('Loading example data…', 'info');
+            try {
+                const resp = await fetch('/api/a4/samples');
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load example dataset.');
+                if (!Array.isArray(data.filenames) || data.filenames.length < MODULE4_MIN_IMAGES) {
+                    throw new Error(`Example dataset must contain at least ${MODULE4_MIN_IMAGES} images. Found ${data.filenames?.length || 0}.`);
+                }
+                state.useSample = true;
+                state.sampleFiles = data.filenames.slice();
+                try { fileInput.value = ''; } catch (err) { /* ignore */ }
+                updateSelection();
+                setStatus(`Loaded example dataset (${state.sampleFiles.length} images).`, 'success');
+            } catch (err) {
+                clearSampleMode();
+                updateSelection();
+                setStatus(err.message || 'Could not load example dataset.', 'error');
+            } finally {
+                sampleBtn.disabled = false;
+            }
+        });
+    }
 
     resetBtn.addEventListener('click', () => {
         performReset({ clearServer: true });
@@ -1787,13 +1842,18 @@ function setupModule4Part(config) {
     form.addEventListener('submit', async (event) => {
         event.preventDefault();
         const files = Array.from(fileInput.files || []);
-        if (files.length < MODULE4_MIN_IMAGES) {
+        const fileCount = currentFileCount();
+        if (fileCount < MODULE4_MIN_IMAGES) {
             setStatus(`Please select at least ${MODULE4_MIN_IMAGES} portrait images.`, 'error');
             return;
         }
 
         const formData = new FormData();
-        files.forEach((file) => formData.append('images', file));
+        if (state.useSample) {
+            formData.append('sample', 'm4');
+        } else {
+            files.forEach((file) => formData.append('images', file));
+        }
 
         runBtn.disabled = true;
         resetBtn.disabled = true;
@@ -1803,7 +1863,7 @@ function setupModule4Part(config) {
             const response = await fetch(config.endpoint, { method: 'POST', body: formData });
             const data = await response.json();
             if (!response.ok) throw new Error(data.error || 'Stitching failed.');
-            showResult(data, files.length);
+            showResult(data, fileCount);
         } catch (err) {
             setStatus(err.message || 'Unexpected error while stitching.', 'error');
         } finally {

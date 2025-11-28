@@ -558,6 +558,10 @@
                                 <span>Select portrait images</span>
                             </label>
                             <p class="hint">Upload <strong>at least 8</strong> portrait images (height &gt; width) captured left-to-right. More frames are welcome.</p>
+                            <div class="module4-sample-actions">
+                                <button type="button" class="subtle-btn module4-sample-btn" id="module4-part1-sample">Load example data</button>
+                                <span class="module4-sample-note">Uses resources/m4 images bundled with the project.</span>
+                            </div>
                             <div class="module4-alert" role="note">
                                 Portrait is mandatory. Landscape frames will be rejected to protect the pipeline from bowtie distortion.
                             </div>
@@ -610,6 +614,10 @@
                                 <span>Select portrait images</span>
                             </label>
                             <p class="hint">Use the same 8+ portrait stack to compare results with the handcrafted pipeline.</p>
+                            <div class="module4-sample-actions">
+                                <button type="button" class="subtle-btn module4-sample-btn" id="module4-part2-sample">Load example data</button>
+                                <span class="module4-sample-note">Quickly runs the scratch code against the resources/m4 stack.</span>
+                            </div>
                             <div class="module4-alert" role="note">
                                 The scratch SIFT code is sensitive to ordering and orientation. Keep the portrait constraint enforced above.
                             </div>

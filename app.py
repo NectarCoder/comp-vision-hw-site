@@ -38,6 +38,7 @@ MODULE56_SAMPLE = MODULE56_DIR / 'aruco-marker.mp4'
 MODULE56_PART2_VIDEO = MODULE56_DIR / 'iphone-moving.mp4'
 MODULE56_PART2_MASKS = MODULE56_DIR / 'iphone-moving-masks.npz'
 MODULE4_MIN_IMAGES = 8
+MODULE4_SAMPLE_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm4'
 
 VIDEO_MIME_MAP = {
     '.mp4': 'video/mp4',
@@ -195,6 +196,56 @@ def _load_module4_uploads(file_storages):
 
     uploads.sort(key=lambda entry: _sort_key_natural(entry['filename']))
     return uploads
+
+
+def _list_module4_sample_paths():
+    if not MODULE4_SAMPLE_DIR.exists():
+        raise FileNotFoundError(f"Example image folder missing: {MODULE4_SAMPLE_DIR}")
+
+    sample_paths = [
+        path for path in MODULE4_SAMPLE_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in ALLOWED_IMAGE_EXTENSIONS
+    ]
+
+    if not sample_paths:
+        raise FileNotFoundError(f"No example images found inside {MODULE4_SAMPLE_DIR}")
+
+    sample_paths.sort(key=lambda path: _sort_key_natural(path.name))
+    return sample_paths
+
+
+def _load_module4_sample_images():
+    sample_paths = _list_module4_sample_paths()
+    uploads = []
+    for path in sample_paths:
+        image = cv2.imread(str(path))
+        if image is None:
+            raise FileNotFoundError(f"Failed to read sample image: {path.name}")
+        height, width = image.shape[:2]
+        if height <= width:
+            raise ValueError(f"Sample image '{path.name}' must be portrait oriented (height > width).")
+        uploads.append({'filename': path.name, 'image': image})
+
+    if len(uploads) < MODULE4_MIN_IMAGES:
+        raise ValueError(f"Example dataset must contain at least {MODULE4_MIN_IMAGES} portrait images. Found {len(uploads)}.")
+
+    return uploads
+
+
+def _collect_module4_inputs():
+    files = _get_module4_files_from_request()
+    payload = request.form or (request.get_json(silent=True) or {})
+    sample_flag = ''
+    if payload:
+        sample_flag = str(payload.get('sample') or '').strip().lower()
+
+    if sample_flag in {'1', 'true', 'yes', 'sample', 'm4', 'example'}:
+        return _load_module4_sample_images(), 'sample'
+
+    if files:
+        return _load_module4_uploads(files), 'upload'
+
+    raise ValueError(f"Please upload at least {MODULE4_MIN_IMAGES} portrait images or click 'Load example data'.")
 
 
 def _stitch_module4_part1(images):
@@ -877,47 +928,67 @@ def _get_module4_files_from_request():
     return files
 
 
+@app.route('/api/a4/samples', methods=['GET'])
+def get_a4_samples():
+    try:
+        sample_paths = _list_module4_sample_paths()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+
+    filenames = [path.name for path in sample_paths]
+    if len(filenames) < MODULE4_MIN_IMAGES:
+        return jsonify({'error': f"Example dataset must contain at least {MODULE4_MIN_IMAGES} portrait images."}), 400
+
+    return jsonify({'count': len(filenames), 'filenames': filenames})
+
+
 @app.route('/api/a4/part1', methods=['POST'])
 def handle_a4_part1_upload():
     try:
-        uploads = _load_module4_uploads(_get_module4_files_from_request())
+        uploads, source = _collect_module4_inputs()
         panorama = _stitch_module4_part1([entry['image'] for entry in uploads])
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({'error': str(exc)}), 422
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
     except Exception as exc:
         return jsonify({'error': f'Failed to stitch images with OpenCV pipeline: {exc}'}), 500
 
+    source_label = 'example dataset' if source == 'sample' else 'uploaded set'
     return jsonify({
         'count': len(uploads),
         'filenames': [entry['filename'] for entry in uploads],
         'panorama': _image_array_to_data_url(panorama),
         'width': int(panorama.shape[1]),
         'height': int(panorama.shape[0]),
-        'message': f"Stitched {len(uploads)} portrait images using the OpenCV SIFT pipeline."
+        'message': f"Stitched {len(uploads)} portrait images ({source_label}) using the OpenCV SIFT pipeline."
     })
 
 
 @app.route('/api/a4/part2', methods=['POST'])
 def handle_a4_part2_upload():
     try:
-        uploads = _load_module4_uploads(_get_module4_files_from_request())
+        uploads, source = _collect_module4_inputs()
         panorama = _stitch_module4_part2([entry['image'] for entry in uploads])
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except RuntimeError as exc:
         return jsonify({'error': str(exc)}), 422
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
     except Exception as exc:
         return jsonify({'error': f'Failed to stitch images with custom pipeline: {exc}'}), 500
 
+    source_label = 'example dataset' if source == 'sample' else 'uploaded set'
     return jsonify({
         'count': len(uploads),
         'filenames': [entry['filename'] for entry in uploads],
         'panorama': _image_array_to_data_url(panorama),
         'width': int(panorama.shape[1]),
         'height': int(panorama.shape[0]),
-        'message': f"Stitched {len(uploads)} portrait images using the scratch SIFT + affine pipeline."
+        'message': f"Stitched {len(uploads)} portrait images ({source_label}) using the scratch SIFT + affine pipeline."
     })
 
 

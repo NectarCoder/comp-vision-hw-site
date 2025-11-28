@@ -981,6 +981,12 @@ button.run-btn:hover { background-color: var(--primary-hover); }
     margin: 0;
 }
 
+.module4-selection__note {
+    font-size: 0.85rem;
+    color: var(--muted);
+    margin-bottom: 0.5rem;
+}
+
 .module4-file-list {
     list-style: none;
     margin: 0;
@@ -1271,6 +1277,75 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
     border-radius: 8px;
     background: rgba(148,163,184,0.12);
     color: var(--muted);
+}
+
+/* --- Module 4 sample buttons: glow + glisten --- */
+.module4-sample-btn {
+    position: relative;
+    overflow: hidden;
+    z-index: 0;
+    color: var(--primary);
+    background: linear-gradient(90deg, rgba(96,165,250,0.06), rgba(96,165,250,0.12));
+    border: 1px solid rgba(96,165,250,0.22);
+    box-shadow: 0 6px 18px rgba(96,165,250,0.08);
+    transition: transform 160ms ease, box-shadow 200ms ease, border-color 120ms ease;
+    animation: module4-pulse 2.6s ease-in-out infinite;
+}
+
+.module4-sample-btn:focus-visible {
+    outline: 3px solid rgba(96,165,250,0.16);
+    outline-offset: 4px;
+}
+
+.module4-sample-btn:hover:not(:disabled) {
+    transform: translateY(-2px);
+    box-shadow: 0 10px 28px rgba(96,165,250,0.18);
+    border-color: rgba(96,165,250,0.36);
+}
+
+.module4-sample-btn:active:not(:disabled) {
+    transform: translateY(0);
+}
+
+.module4-sample-btn::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -60%;
+    width: 48%;
+    height: 100%;
+    background: linear-gradient(90deg, rgba(255,255,255,0), rgba(255,255,255,0.32), rgba(255,255,255,0));
+    transform: skewX(-20deg);
+    filter: blur(6px);
+    opacity: 0.9;
+    pointer-events: none;
+    animation: module4-sheen 3s linear infinite;
+}
+
+@keyframes module4-sheen {
+    0% { left: -60%; }
+    100% { left: 140%; }
+}
+
+@keyframes module4-pulse {
+    0% { box-shadow: 0 6px 10px rgba(96,165,250,0.06); }
+    50% { box-shadow: 0 10px 24px rgba(96,165,250,0.16); }
+    100% { box-shadow: 0 6px 10px rgba(96,165,250,0.06); }
+}
+
+.module4-sample-btn[disabled], .module4-sample-btn:disabled {
+    animation: none;
+    box-shadow: none;
+    border-color: rgba(96,165,250,0.12);
+    opacity: 0.8;
+}
+
+/* Ensure sheen doesn't appear in high-contrast or reduced-motion settings */
+@media (prefers-reduced-motion: reduce) {
+    .module4-sample-btn,
+    .module4-sample-btn::after {
+        animation: none !important;
+    }
 }
 
 .status-line[data-variant="success"] {

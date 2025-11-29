@@ -1,14 +1,11 @@
 # TODO: Description
 from __future__ import annotations
-
 import argparse
 import sys
 from pathlib import Path
 from typing import Optional, Tuple
-
 import cv2
 import numpy as np
-
 
 def choose_aruco_dictionary(dict_name: Optional[str] = None):
     name_map = {

@@ -1,18 +1,4 @@
-"""Module 3 Part 3 – SAM2 vs. ArUco segmentation comparison.
-
-This script mirrors the CLI of ``module3_part2.py`` but swaps the segmentation
-stage with the Segment Anything 2 (SAM2) image predictor. For each input image
-containing ArUco markers, we:
-
-1. Reuse the ArUco + GrabCut pipeline from Part 2 to establish a baseline mask.
-2. Convert the detected marker hull into a bounding box prompt for SAM2.
-3. Run SAM2 to produce a second mask of the same object.
-4. Compute the IoU between both masks and save a side-by-side visualization in
-   the source folder (suffix ``_sam2`` by default).
-
-The user must provide valid SAM2 configuration + checkpoint files. Refer to the
-official SAM2 release for download instructions.
-"""
+#TODO: add description
 
 from __future__ import annotations
 

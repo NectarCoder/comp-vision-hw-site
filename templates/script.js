@@ -18,6 +18,60 @@ function notifyTabChangeListeners(prev, next) {
     });
 }
 
+let module3LightboxOverlay = null;
+let module3LightboxImage = null;
+
+function closeModule3Lightbox() {
+    if (!module3LightboxOverlay) return;
+    module3LightboxOverlay.classList.remove('module3-lightbox--open');
+    document.body.classList.remove('module3-lightbox-open');
+}
+
+function ensureModule3Lightbox() {
+    if (module3LightboxOverlay) return;
+    module3LightboxOverlay = document.createElement('div');
+    module3LightboxOverlay.className = 'module3-lightbox';
+    module3LightboxOverlay.setAttribute('role', 'dialog');
+    module3LightboxOverlay.setAttribute('aria-modal', 'true');
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'module3-lightbox__close';
+    closeBtn.setAttribute('aria-label', 'Close preview');
+    closeBtn.textContent = '✕';
+
+    module3LightboxImage = document.createElement('img');
+    module3LightboxImage.className = 'module3-lightbox__img';
+    module3LightboxImage.alt = '';
+
+    module3LightboxOverlay.appendChild(closeBtn);
+    module3LightboxOverlay.appendChild(module3LightboxImage);
+    document.body.appendChild(module3LightboxOverlay);
+
+    closeBtn.addEventListener('click', closeModule3Lightbox);
+    module3LightboxOverlay.addEventListener('click', (event) => {
+        if (event.target === module3LightboxOverlay) {
+            closeModule3Lightbox();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && module3LightboxOverlay.classList.contains('module3-lightbox--open')) {
+            closeModule3Lightbox();
+        }
+    });
+}
+
+function openModule3Lightbox(src, altText) {
+    if (!src) return;
+    ensureModule3Lightbox();
+    if (!module3LightboxOverlay || !module3LightboxImage) return;
+    module3LightboxImage.src = src;
+    module3LightboxImage.alt = altText || 'Preview image';
+    module3LightboxOverlay.classList.add('module3-lightbox--open');
+    document.body.classList.add('module3-lightbox-open');
+}
+
 function switchTab(tabId) {
     const previousTab = activeTabId;
     document.querySelectorAll('.tab-content').forEach(content => {
@@ -2020,7 +2074,8 @@ function initModule3Flow() {
             readyStatus: 'Ready to run the marker-guided cutout.',
             runningStatus: 'Detecting ArUco markers and running GrabCut…',
             outputLabel: 'Marker-guided cutout',
-            successStatus: 'Marker-guided cutouts generated.'
+            successStatus: 'Marker-guided cutouts generated.',
+            enableLightbox: true
         }
     ];
 
@@ -2037,8 +2092,6 @@ function initModule3Part5Showcase() {
     const depsEl = document.getElementById('module3-part5-deps');
     let isLoading = false;
     let hasLoaded = false;
-    let lightboxOverlay = null;
-    let lightboxImage = null;
 
     const initCliCopyButtons = () => {
         const snippets = document.querySelectorAll('.module3-cli-snippet');
@@ -2084,55 +2137,6 @@ function initModule3Part5Showcase() {
                 showToast();
             });
         });
-    };
-
-    const ensureLightbox = () => {
-        if (lightboxOverlay) return;
-        lightboxOverlay = document.createElement('div');
-        lightboxOverlay.className = 'module3-lightbox';
-        lightboxOverlay.setAttribute('role', 'dialog');
-        lightboxOverlay.setAttribute('aria-modal', 'true');
-
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.className = 'module3-lightbox__close';
-        closeBtn.setAttribute('aria-label', 'Close preview');
-        closeBtn.textContent = '✕';
-
-        lightboxImage = document.createElement('img');
-        lightboxImage.className = 'module3-lightbox__img';
-        lightboxImage.alt = '';
-
-        lightboxOverlay.appendChild(closeBtn);
-        lightboxOverlay.appendChild(lightboxImage);
-        document.body.appendChild(lightboxOverlay);
-
-        const closeLightbox = () => {
-            lightboxOverlay?.classList.remove('module3-lightbox--open');
-            document.body.classList.remove('module3-lightbox-open');
-        };
-
-        closeBtn.addEventListener('click', closeLightbox);
-        lightboxOverlay.addEventListener('click', (event) => {
-            if (event.target === lightboxOverlay) {
-                closeLightbox();
-            }
-        });
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && lightboxOverlay?.classList.contains('module3-lightbox--open')) {
-                closeLightbox();
-            }
-        });
-        lightboxOverlay.closeLightbox = closeLightbox; // custom property for reuse
-    };
-
-    const openLightbox = (src, altText) => {
-        ensureLightbox();
-        if (!lightboxOverlay || !lightboxImage) return;
-        lightboxImage.src = src;
-        lightboxImage.alt = altText || 'Preview image';
-        lightboxOverlay.classList.add('module3-lightbox--open');
-        document.body.classList.add('module3-lightbox-open');
     };
 
     const setSummary = (message) => {
@@ -2253,7 +2257,7 @@ function initModule3Part5Showcase() {
     gallery.addEventListener('click', (event) => {
         const img = event.target.closest('img');
         if (!img || !gallery.contains(img)) return;
-        openLightbox(img.src, img.alt);
+        openModule3Lightbox(img.src, img.alt);
     });
 
     gallery.addEventListener('keydown', (event) => {
@@ -2261,7 +2265,7 @@ function initModule3Part5Showcase() {
         const img = event.target;
         if (!img || img.tagName !== 'IMG' || !gallery.contains(img)) return;
         event.preventDefault();
-        openLightbox(img.src, img.alt);
+        openModule3Lightbox(img.src, img.alt);
     });
 
     const activeTab = document.getElementById('a3');
@@ -2276,7 +2280,7 @@ function initModule3Part5Showcase() {
     });
 
     initCliCopyButtons();
-    ensureLightbox();
+    ensureModule3Lightbox();
 }
 
 function setupModule3Part(config) {
@@ -2305,6 +2309,10 @@ function setupModule3Part(config) {
         sampleFiles: [],
         hasResults: false
     };
+
+    if (config.enableLightbox) {
+        gallery.classList.add('module3-gallery--interactive');
+    }
 
     const setStatus = (message, variant = 'info') => {
         statusLine.textContent = message;
@@ -2377,11 +2385,17 @@ function setupModule3Part(config) {
     const createFigure = (src, label, filename) => {
         const figure = document.createElement('figure');
         figure.className = 'module3-result-figure';
+        if (config.enableLightbox) {
+            figure.classList.add('module3-result-figure--interactive');
+        }
         if (src) {
             const img = document.createElement('img');
             img.src = src;
             img.alt = label ? `${label} (${filename || 'image'})` : (filename || 'image');
             img.loading = 'lazy';
+            if (config.enableLightbox) {
+                img.tabIndex = 0;
+            }
             figure.appendChild(img);
         } else {
             const placeholder = document.createElement('div');
@@ -2428,6 +2442,25 @@ function setupModule3Part(config) {
         refreshButtons();
         return items.length;
     };
+
+    if (config.enableLightbox) {
+        const handleLightboxClick = (event) => {
+            const img = event.target.closest('img');
+            if (!img || !gallery.contains(img)) return;
+            openModule3Lightbox(img.src, img.alt);
+        };
+
+        const handleLightboxKeydown = (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const img = event.target;
+            if (!img || img.tagName !== 'IMG' || !gallery.contains(img)) return;
+            event.preventDefault();
+            openModule3Lightbox(img.src, img.alt);
+        };
+
+        gallery.addEventListener('click', handleLightboxClick);
+        gallery.addEventListener('keydown', handleLightboxKeydown);
+    }
 
     const performReset = ({ keepStatus = false } = {}) => {
         form.reset();

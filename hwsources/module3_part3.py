@@ -1,8 +1,8 @@
-#TODO: add description
-
+#TODO: Add description
 from __future__ import annotations
 
 import argparse
+import importlib
 import logging
 import sys
 from dataclasses import dataclass
@@ -23,11 +23,13 @@ SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
 
 @dataclass
 class Sam2Runtime:
+	# Keeps the predictor and device in one bundle.
 	predictor: Any
 	device: str
 
 
 def _build_argument_parser() -> argparse.ArgumentParser:
+	# Builds the command line options people can tweak.
 	parser = argparse.ArgumentParser(
 		description="Compare ArUco segmentation with SAM2 outputs for a folder of images.",
 	)
@@ -91,6 +93,7 @@ def _build_argument_parser() -> argparse.ArgumentParser:
 
 
 def _setup_logging(verbose: bool) -> None:
+	# Chooses a simple logging level for the run.
 	logging.basicConfig(
 		level=logging.DEBUG if verbose else logging.INFO,
 		format="%(levelname)s: %(message)s",
@@ -98,6 +101,7 @@ def _setup_logging(verbose: bool) -> None:
 
 
 def _resolve_device(device_arg: str) -> str:
+	# Picks the device depending on what the machine supports.
 	if device_arg.lower() != "auto":
 		return device_arg
 	if torch is not None and torch.cuda.is_available():
@@ -106,15 +110,19 @@ def _resolve_device(device_arg: str) -> str:
 
 
 def _load_sam2_predictor(config_path: Path, checkpoint_path: Path, device_arg: str) -> Sam2Runtime | None:
+	# Loads the optional SAM2 model when the files are present.
 	try:
-		from hydra.utils import instantiate  # type: ignore
-		from omegaconf import OmegaConf  # type: ignore
-		from sam2.sam2_image_predictor import SAM2ImagePredictor  # type: ignore
+		hydra_utils = importlib.import_module("hydra.utils")
+		omegaconf_mod = importlib.import_module("omegaconf")
+		sam_module = importlib.import_module("sam2.sam2_image_predictor")
 	except ImportError:
 		LOGGER.error(
 			"SAM2 dependencies are missing. Install 'sam2', 'hydra-core', 'omegaconf', and 'torch' as listed in setup_venv/requirements.txt."
 		)
 		return None
+	instantiate = getattr(hydra_utils, "instantiate")
+	OmegaConf = getattr(omegaconf_mod, "OmegaConf")
+	SAM2ImagePredictor = getattr(sam_module, "SAM2ImagePredictor")
 
 	if torch is None:
 		LOGGER.error("PyTorch is not installed; SAM2 cannot run without torch.")
@@ -153,15 +161,12 @@ def _load_sam2_predictor(config_path: Path, checkpoint_path: Path, device_arg: s
 
 
 def _load_checkpoint_state(checkpoint_path: Path) -> dict:
-	load_kwargs = {"map_location": "cpu"}
-	try:
-		weights = torch.load(str(checkpoint_path), weights_only=True, **load_kwargs)  # type: ignore[arg-type]
-	except TypeError:
-		weights = torch.load(str(checkpoint_path), **load_kwargs)
-
+	# Pulls the model weights from the checkpoint file.
+	weights = torch.load(str(checkpoint_path), map_location="cpu")
 	if isinstance(weights, dict):
-		if "model" in weights and isinstance(weights["model"], dict):
-			return weights["model"]
+		model_state = weights.get("model")
+		if isinstance(model_state, dict):
+			return model_state
 		return weights
 	raise TypeError("Checkpoint did not contain a valid state dictionary.")
 
@@ -171,6 +176,7 @@ def _segment_with_aruco(
 	iterations: int,
 	expansion: float,
 ) -> Tuple[np.ndarray, np.ndarray, np.ndarray] | None:
+	# Runs the ArUco baseline to build a reference mask.
 	detection = aruco_module._detect_aruco_markers(image)
 	if detection is None:
 		LOGGER.warning("Skipping image because ArUco markers were not detected.")
@@ -190,6 +196,7 @@ def _compute_bounding_box(
 	image_shape: Tuple[int, int],
 	scale: float,
 ) -> np.ndarray:
+	# Expands the hull into a padded box for SAM2.
 	x_min = float(np.min(hull[:, 0]))
 	y_min = float(np.min(hull[:, 1]))
 	x_max = float(np.max(hull[:, 0]))
@@ -212,6 +219,7 @@ def _compute_bounding_box(
 
 
 def _build_prompt_points(hull: np.ndarray, count: int, image_shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray] | Tuple[None, None]:
+	# Samples a few positive clicks along the hull.
 	if count <= 0 or hull.size == 0:
 		return None, None
 	count = min(count, len(hull))
@@ -235,6 +243,7 @@ def _segment_with_sam2(
 	aruco_mask: np.ndarray,
 	prompt_points: int,
 ) -> Tuple[np.ndarray, float] | Tuple[None, None]:
+	# Calls SAM2 to get masks and keeps the one closest to ArUco.
 	image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 	runtime.predictor.set_image(image_rgb)
 	point_coords, point_labels = _build_prompt_points(hull, prompt_points, image.shape[1::-1])
@@ -244,23 +253,23 @@ def _segment_with_sam2(
 		predict_kwargs["point_labels"] = point_labels
 	try:
 		masks, scores, _logits = runtime.predictor.predict(**predict_kwargs)
-	except Exception as exc:  # noqa: BLE001 - log and fail gracefully
+	except Exception as exc:
 		LOGGER.exception("SAM2 prediction failed: %s", exc)
 		return None, None
 	if masks is None or len(masks) == 0:
 		return None, None
 	masks_u8 = [(mask * 255).astype(np.uint8) for mask in masks]
-	best_idx = 0
-	best_iou = -1.0
-	for idx, cand in enumerate(masks_u8):
-		iou = _calculate_iou(aruco_mask, cand)
-		if iou > best_iou:
-			best_iou = iou
-			best_idx = idx
-	return masks_u8[best_idx], float(scores[best_idx] if scores is not None else 0.0)
+	ious = [
+		_calculate_iou(aruco_mask, cand)
+		for cand in masks_u8
+	]
+	best_idx = int(np.argmax(ious))
+	best_score = float(scores[best_idx]) if scores is not None else 0.0
+	return masks_u8[best_idx], best_score
 
 
 def _calculate_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
+	# Compares two binary masks fairly.
 	a = mask_a > 0
 	b = mask_b > 0
 	union = np.logical_or(a, b).sum()
@@ -271,6 +280,7 @@ def _calculate_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
 
 
 def _draw_mask_panel(image: np.ndarray, mask: np.ndarray, color: Tuple[int, int, int]) -> np.ndarray:
+	# Builds a colored overlay so the mask pops out.
 	panel = image.copy()
 	overlay = np.zeros_like(panel)
 	overlay[mask > 0] = color
@@ -281,12 +291,6 @@ def _draw_mask_panel(image: np.ndarray, mask: np.ndarray, color: Tuple[int, int,
 	return panel
 
 
-def _label_panel(panel: np.ndarray, text: str) -> np.ndarray:
-	labeled = panel.copy()
-	cv2.putText(labeled, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
-	return labeled
-
-
 def _compose_visualization(
 	image: np.ndarray,
 	aruco_contour: np.ndarray,
@@ -294,33 +298,30 @@ def _compose_visualization(
 	aruco_mask: np.ndarray,
 	iou: float,
 ) -> np.ndarray:
+	# Stacks the reference, SAM2, and blended views side by side.
 	aruco_panel = aruco_module._draw_boundary(image, aruco_contour)
-	aruco_panel = _label_panel(aruco_panel, "ArUco GrabCut")
 	sam_panel = _draw_mask_panel(image, sam_mask, (255, 0, 255))
-	sam_panel = _label_panel(sam_panel, "SAM2")
 	combined = image.copy()
 	if aruco_contour is not None:
 		cv2.drawContours(combined, [aruco_contour], -1, (0, 255, 0), 2)
 	sam_contour = aruco_module._extract_primary_contour(sam_mask)
 	if sam_contour is not None:
 		cv2.drawContours(combined, [sam_contour], -1, (255, 0, 255), 2)
-	text = f"IoU: {iou:.3f}"
-	combined = _label_panel(combined, text)
-	stacked = np.concatenate([aruco_panel, sam_panel, combined], axis=1)
-	return stacked
+	panels = [
+		("ArUco GrabCut", aruco_panel),
+		("SAM2", sam_panel),
+		((f"IoU: {iou:.3f}"), combined),
+	]
+	for text, panel in panels:
+		cv2.putText(panel, text, (20, 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (255, 255, 255), 2, cv2.LINE_AA)
+	return np.concatenate([panel for _, panel in panels], axis=1)
 
 
 def _iter_image_files(folder: Path, suffix: str) -> Iterable[Path]:
+	# Finds supported images that have not been processed yet.
 	for path in sorted(folder.iterdir()):
-		if not path.is_file() or path.suffix.lower() not in SUPPORTED_SUFFIXES:
-			continue
-		if path.stem.endswith(suffix):
-			continue
-		yield path
-
-
-def _output_path(input_path: Path, suffix: str) -> Path:
-	return input_path.with_name(f"{input_path.stem}{suffix}{input_path.suffix}")
+		if path.is_file() and path.suffix.lower() in SUPPORTED_SUFFIXES and not path.stem.endswith(suffix):
+			yield path
 
 
 def _process_single_image(
@@ -332,6 +333,7 @@ def _process_single_image(
 	bbox_scale: float,
 	prompt_points: int,
 ) -> bool:
+	# Handles one photo from read to save.
 	LOGGER.info("Processing %s", image_path.name)
 	image = cv2.imread(str(image_path))
 	if image is None:
@@ -350,7 +352,7 @@ def _process_single_image(
 
 	iou = _calculate_iou(aruco_mask, sam_mask)
 	visualization = _compose_visualization(image, aruco_contour, sam_mask, aruco_mask, iou)
-	output_path = _output_path(image_path, suffix)
+	output_path = image_path.with_name(f"{image_path.stem}{suffix}{image_path.suffix}")
 	if cv2.imwrite(str(output_path), visualization):
 		LOGGER.info("Saved %s (IoU=%.3f, SAM-score=%.3f)", output_path.name, iou, sam_score or 0.0)
 		return True
@@ -367,6 +369,7 @@ def _run(
 	prompt_points: int,
 	runtime: Sam2Runtime,
 ) -> int:
+	# Walks the folder and tracks how many runs succeed.
 	if not image_folder.is_dir():
 		LOGGER.error("%s is not a valid folder", image_folder)
 		return 1
@@ -401,6 +404,7 @@ def _run(
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+	# Acts as the entry point for the script.
 	parser = _build_argument_parser()
 	args = parser.parse_args(argv)
 	_setup_logging(args.verbose)

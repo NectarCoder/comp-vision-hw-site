@@ -2002,6 +2002,24 @@ function initModule3Flow() {
             runningStatus: 'Running contour extraction…',
             outputLabel: 'Boundary overlay',
             successStatus: 'Boundary overlay generated.'
+        },
+        {
+            key: 'part4',
+            formId: 'module3-part4-form',
+            inputId: 'module3-part4-input',
+            selectionId: 'module3-part4-selection',
+            sampleBtnId: 'module3-part4-sample',
+            runBtnId: 'module3-part4-run',
+            resetBtnId: 'module3-part4-reset',
+            statusId: 'module3-part4-status',
+            galleryId: 'module3-part4-gallery',
+            summaryId: 'module3-part4-summary',
+            endpoint: '/api/a3/part4',
+            sampleEndpoint: '/api/a3/part4/samples',
+            readyStatus: 'Ready to run the marker-guided cutout.',
+            runningStatus: 'Detecting ArUco markers and running GrabCut…',
+            outputLabel: 'Marker-guided cutout',
+            successStatus: 'Marker-guided cutouts generated.'
         }
     ];
 
@@ -2188,7 +2206,8 @@ function setupModule3Part(config) {
             sampleBtn.disabled = true;
             setStatus('Loading example dataset…', 'info');
             try {
-                const resp = await fetch('/api/a3/samples');
+                const sampleEndpoint = config.sampleEndpoint || '/api/a3/samples';
+                const resp = await fetch(sampleEndpoint);
                 const data = await resp.json();
                 if (!resp.ok) throw new Error(data.error || 'Failed to load example dataset.');
                 if (!Array.isArray(data.filenames) || data.filenames.length < MODULE3_MIN_IMAGES) {

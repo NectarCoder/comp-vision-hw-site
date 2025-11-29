@@ -610,16 +610,41 @@
                     </div>
                 </section>
 
-                <section class="module3-card module3-card--stub" id="module3-part4" aria-labelledby="module3-part4-title">
+                <section class="module3-card" id="module3-part4" aria-labelledby="module3-part4-title">
                     <header class="module3-card__header">
                         <div>
-                            <h3 id="module3-part4-title">Part 4 - Coming Soon</h3>
-                            <p>The fourth experiment lives here once we finalize the assignment requirements.</p>
+                            <h3 id="module3-part4-title">Part 4 - Marker-Guided GrabCut</h3>
+                            <p>Use ArUco markers to pin the object's outline and carve it out with GrabCut.</p>
                         </div>
                     </header>
-                    <div class="module3-card__body">
-                        <p class="module3-stub-note">We are reserving this panel for the next deliverable. Thanks for your patience!</p>
-                        <button type="button" class="primary-btn" disabled>Implementation pending</button>
+                    <div class="module3-card__body module3-grid">
+                        <form id="module3-part4-form" aria-label="Module 3 Part 4 form" enctype="multipart/form-data">
+                            <div class="field">
+                                <label class="file-input module3-file-picker">
+                                    <input type="file" id="module3-part4-input" name="images" accept="image/*" multiple>
+                                    <span>Select at least 10 images</span>
+                                </label>
+                                <p class="hint">Each upload must show the object with ArUco markers taped around it so the boundary can lock on.</p>
+                                <div class="module3-sample-actions">
+                                    <button type="button" class="subtle-btn module3-sample-btn" id="module3-part4-sample">Use example dataset</button>
+                                    <span class="module3-sample-note">Loads resources/m3/part2 (ignores *_detect* files).</span>
+                                </div>
+                            </div>
+                            <div class="module3-selection" id="module3-part4-selection" data-empty="true">
+                                <p>No dataset selected yet.</p>
+                            </div>
+                            <div class="module3-actions">
+                                <button type="submit" class="primary-btn" id="module3-part4-run" disabled>Run Task 4</button>
+                                <button type="button" class="subtle-btn" id="module3-part4-reset" disabled>Reset</button>
+                            </div>
+                            <div class="status-line" id="module3-part4-status" data-variant="info">Upload ≥10 images or click "Use example dataset" to enable the cutout.</div>
+                        </form>
+                        <div class="module3-results" aria-live="polite">
+                            <div class="module3-summary" id="module3-part4-summary">Outputs pair the original frame with a marker-guided cutout.</div>
+                            <div class="module3-gallery" id="module3-part4-gallery" data-empty="true">
+                                <p class="module3-gallery__placeholder">Run Task 4 to see the segmented overlays.</p>
+                            </div>
+                        </div>
                     </div>
                 </section>
 

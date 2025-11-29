@@ -18,6 +18,7 @@ import hwsources.module5_6_part1 as module5_6
 from hwsources.module2_part2 import process_image as module2_process_image
 import hwsources.module2_part3 as module2_part3
 import hwsources.module3_part1 as module3_part1
+import hwsources.module3_part2 as module3_part2
 import hwsources.module4_part1 as module4_part1
 import hwsources.module4_part2 as module4_part2
 import hwsources.module7_part2 as module7_part2
@@ -39,6 +40,7 @@ MODULE1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm1'
 MODULE3_SAMPLE_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm3'
 MODULE3_MIN_IMAGES = 10
 MODULE3_PREVIEW_MAX_DIM = 1400
+MODULE3_PART4_SAMPLE_DIR = MODULE3_SAMPLE_DIR / 'part2'
 MODULE56_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm5_6'
 MODULE56_SAMPLE = MODULE56_DIR / 'aruco-marker.mp4'
 MODULE56_PART2_VIDEO = MODULE56_DIR / 'iphone-moving.mp4'
@@ -172,6 +174,36 @@ def _load_module3_sample_images():
     return uploads
 
 
+def _list_module3_part4_sample_paths():
+    if not MODULE3_PART4_SAMPLE_DIR.exists():
+        raise FileNotFoundError('Module 3 Part 4 example dataset is missing.')
+
+    sample_paths = [
+        path for path in MODULE3_PART4_SAMPLE_DIR.iterdir()
+        if (
+            path.is_file()
+            and path.suffix.lower() in ALLOWED_IMAGE_EXTENSIONS
+            and '_detect' not in path.name.lower()
+        )
+    ]
+
+    if len(sample_paths) < MODULE3_MIN_IMAGES:
+        raise ValueError(f"Module 3 Part 4 example dataset must contain at least {MODULE3_MIN_IMAGES} images.")
+
+    sample_paths.sort(key=lambda path: path.name.lower())
+    return sample_paths
+
+
+def _load_module3_part4_sample_images():
+    uploads = []
+    for path in _list_module3_part4_sample_paths():
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise RuntimeError(f'Failed to read Module 3 Part 4 example image {path.name}.')
+        uploads.append({'filename': path.name, 'image': image})
+    return uploads
+
+
 def _load_module3_uploads(file_storages):
     uploads = []
     for idx, storage in enumerate(file_storages, start=1):
@@ -220,6 +252,26 @@ def _collect_module3_inputs():
     return _load_module3_uploads(files), 'upload'
 
 
+def _collect_module3_part4_inputs():
+    payload = _get_request_payload()
+    use_sample = False
+
+    if payload:
+        for key in ('sample', 'useSample', 'samplePart4', 'part4Sample'):
+            if key in payload and _truthy_flag(payload.get(key)):
+                use_sample = True
+                break
+
+    if use_sample:
+        return _load_module3_part4_sample_images(), 'sample'
+
+    files = _get_module3_files_from_request()
+    if not files:
+        raise ValueError(f"Please upload at least {MODULE3_MIN_IMAGES} images or click 'Use example data'.")
+
+    return _load_module3_uploads(files), 'upload'
+
+
 def _run_module3_processor(uploads, processor, part_label):
     results = []
     for entry in uploads:
@@ -239,6 +291,46 @@ def _run_module3_processor(uploads, processor, part_label):
             'filename': filename,
             'inputImage': _image_array_to_data_url(input_preview, ext='.jpg'),
             'outputImage': _image_array_to_data_url(output_preview, ext='.jpg'),
+        })
+
+    return results
+
+
+def _run_module3_part4_processor(uploads, iterations: int = 5, expansion: float = 0.15):
+    results = []
+    for entry in uploads:
+        filename = entry['filename']
+        image = entry['image']
+
+        detection = module3_part2._detect_aruco_markers(image)
+        if detection is None:
+            raise RuntimeError(f"Module 3 Part 4: could not find at least three ArUco markers in {filename}.")
+
+        mask = module3_part2._build_grabcut_mask(image.shape[:2], detection.hull, expansion)
+        segmentation = module3_part2._run_grabcut(image, mask, iterations)
+        contour = module3_part2._extract_primary_contour(segmentation)
+        if contour is None:
+            raise RuntimeError(f"Module 3 Part 4: could not extract an object contour for {filename}.")
+
+        overlay = module3_part2._draw_boundary(image, contour)
+
+        marker_ids = detection.ids
+        if isinstance(marker_ids, np.ndarray):
+            marker_ids = marker_ids.astype(int).reshape(-1).tolist()
+        elif marker_ids is None:
+            marker_ids = []
+        else:
+            marker_ids = [int(marker_ids)]
+
+        input_preview = _resize_for_preview(image, MODULE3_PREVIEW_MAX_DIM)
+        output_preview = _resize_for_preview(overlay, MODULE3_PREVIEW_MAX_DIM)
+
+        results.append({
+            'filename': filename,
+            'inputImage': _image_array_to_data_url(input_preview, ext='.jpg'),
+            'outputImage': _image_array_to_data_url(output_preview, ext='.jpg'),
+            'markerCount': len(marker_ids),
+            'markerIds': marker_ids,
         })
 
     return results
@@ -1373,6 +1465,21 @@ def get_a3_samples():
     })
 
 
+@app.route('/api/a3/part4/samples', methods=['GET'])
+def get_a3_part4_samples():
+    try:
+        sample_paths = _list_module3_part4_sample_paths()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    return jsonify({
+        'count': len(sample_paths),
+        'filenames': [path.name for path in sample_paths],
+    })
+
+
 @app.route('/api/a3/part1', methods=['POST'])
 def handle_a3_part1():
     try:
@@ -1440,6 +1547,53 @@ def handle_a3_part3():
         'source': source,
         'results': results,
         'message': f"Outlined the dominant object boundaries for {len(results)} images using the {source_label}."
+    })
+
+
+@app.route('/api/a3/part4', methods=['POST'])
+def handle_a3_part4():
+    iterations = 5
+    expansion = 0.15
+
+    payload = _get_request_payload()
+    if payload:
+        try:
+            iterations = int(float(payload.get('iterations', iterations)))
+        except (TypeError, ValueError):
+            iterations = 5
+        try:
+            expansion = float(payload.get('hullExpansion', expansion))
+        except (TypeError, ValueError):
+            expansion = 0.15
+
+    iterations = max(1, min(iterations, 10))
+    expansion = max(0.0, min(expansion, 0.5))
+
+    try:
+        uploads, source = _collect_module3_part4_inputs()
+        results = _run_module3_part4_processor(uploads, iterations=iterations, expansion=expansion)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run Module 3 Part 4: {exc}'}), 500
+
+    marker_counts = [entry.get('markerCount', 0) for entry in results]
+    avg_markers = round(sum(marker_counts) / len(marker_counts), 2) if marker_counts else 0
+    source_label = 'example dataset' if source == 'sample' else 'uploaded set'
+    return jsonify({
+        'count': len(results),
+        'source': source,
+        'results': results,
+        'summary': {
+            'iterations': iterations,
+            'hullExpansion': expansion,
+            'averageMarkers': avg_markers,
+        },
+        'message': f"Segmented {len(results)} images by anchoring GrabCut around the ArUco markers from the {source_label}."
     })
 
 

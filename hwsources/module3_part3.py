@@ -84,14 +84,14 @@ def _build_argument_parser() -> argparse.ArgumentParser:
 	parser.add_argument(
 		"--model-config",
 		type=Path,
-		default=Path("checkpoints/sam2_hiera_l.yaml"),
-		help="Path to the SAM2 model configuration YAML.",
+		required=True,
+		help="Absolute or relative path to the SAM2 YAML config downloaded locally.",
 	)
 	parser.add_argument(
 		"--checkpoint",
 		type=Path,
-		default=Path("checkpoints/sam2_hiera_large.pt"),
-		help="Path to the SAM2 checkpoint file (.pt).",
+		required=True,
+		help="Absolute or relative path to the SAM2 model weights (.pt) stored locally.",
 	)
 	parser.add_argument(
 		"--device",
@@ -122,13 +122,18 @@ def _resolve_device(device_arg: str) -> str:
 
 
 def _load_sam2_predictor(config_path: Path, checkpoint_path: Path, device_arg: str) -> Sam2Runtime | None:
-	try:  # Local import keeps this module importable without SAM2 installed.
-		from sam2.build_sam import build_sam2  # type: ignore
+	try:
+		from hydra.utils import instantiate  # type: ignore
+		from omegaconf import OmegaConf  # type: ignore
 		from sam2.sam2_image_predictor import SAM2ImagePredictor  # type: ignore
 	except ImportError:
 		LOGGER.error(
-			"SAM2 dependencies are missing. Install 'sam2' and 'torch' as listed in setup_venv/requirements.txt."
+			"SAM2 dependencies are missing. Install 'sam2', 'hydra-core', 'omegaconf', and 'torch' as listed in setup_venv/requirements.txt."
 		)
+		return None
+
+	if torch is None:
+		LOGGER.error("PyTorch is not installed; SAM2 cannot run without torch.")
 		return None
 
 	config_path = config_path.expanduser()
@@ -143,12 +148,38 @@ def _load_sam2_predictor(config_path: Path, checkpoint_path: Path, device_arg: s
 	device = _resolve_device(device_arg)
 	LOGGER.info("Loading SAM2 model (config=%s, checkpoint=%s, device=%s)", config_path, checkpoint_path, device)
 	try:
-		model = build_sam2(str(config_path), str(checkpoint_path), device=device)
+		cfg = OmegaConf.load(str(config_path))
+		OmegaConf.resolve(cfg)
+		if "model" not in cfg:
+			raise ValueError("Configuration file is missing the 'model' key required for instantiation.")
+		model = instantiate(cfg["model"], _recursive_=True)
+		state_dict = _load_checkpoint_state(checkpoint_path)
+		missing_keys, unexpected_keys = model.load_state_dict(state_dict)
+		if missing_keys:
+			raise RuntimeError(f"Checkpoint is missing keys: {missing_keys}")
+		if unexpected_keys:
+			raise RuntimeError(f"Checkpoint has unexpected keys: {unexpected_keys}")
+		model = model.to(device)
+		model.eval()
 		predictor = SAM2ImagePredictor(model)
 		return Sam2Runtime(predictor=predictor, device=device)
 	except Exception as exc:  # noqa: BLE001 - bubble up helpful message
 		LOGGER.exception("Failed to initialize SAM2: %s", exc)
 		return None
+
+
+def _load_checkpoint_state(checkpoint_path: Path) -> dict:
+	load_kwargs = {"map_location": "cpu"}
+	try:
+		weights = torch.load(str(checkpoint_path), weights_only=True, **load_kwargs)  # type: ignore[arg-type]
+	except TypeError:
+		weights = torch.load(str(checkpoint_path), **load_kwargs)
+
+	if isinstance(weights, dict):
+		if "model" in weights and isinstance(weights["model"], dict):
+			return weights["model"]
+		return weights
+	raise TypeError("Checkpoint did not contain a valid state dictionary.")
 
 
 def _segment_with_aruco(

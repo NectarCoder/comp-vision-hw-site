@@ -495,10 +495,171 @@
                     </p>
                 </div>
             </section>
-            <div class="module-container">
-                <textarea id="input-a3" placeholder="Enter input data here..."></textarea>
-                <button class="run-btn" onclick="runModule('a3')">Run Module 3</button>
-                <div id="output-a3" class="output-box">// Output will appear here...</div>
+            <div class="module3-cards">
+                <section class="module3-card" id="module3-part1" aria-labelledby="module3-part1-title">
+                    <header class="module3-card__header">
+                        <div>
+                            <h3 id="module3-part1-title">Part 1 - Gradients &amp; Laplacian of Gaussian</h3>
+                            <p>See each photo alongside its gradient magnitude, direction, and LoG view.</p>
+                        </div>
+                    </header>
+                    <div class="module3-card__body module3-grid">
+                        <form id="module3-part1-form" aria-label="Module 3 Part 1 form" enctype="multipart/form-data">
+                            <div class="field">
+                                <label class="file-input module3-file-picker">
+                                    <input type="file" id="module3-part1-input" name="images" accept="image/*" multiple>
+                                    <span>Select at least 10 images</span>
+                                </label>
+                                <p class="hint">Upload 10+ photos and we’ll build the 2×2 gradient grid for every image automatically.</p>
+                                <div class="module3-sample-actions">
+                                    <button type="button" class="subtle-btn module3-sample-btn" id="module3-part1-sample">Use example dataset</button>
+                                    <span class="module3-sample-note">Loads <code>resources/m3</code> (10 bundled frames).</span>
+                                </div>
+                            </div>
+                            <div class="module3-selection" id="module3-part1-selection" data-empty="true">
+                                <p>No dataset selected yet.</p>
+                            </div>
+                            <div class="module3-actions">
+                                <button type="submit" class="primary-btn" id="module3-part1-run" disabled>Run Task 1</button>
+                                <button type="button" class="subtle-btn" id="module3-part1-reset" disabled>Reset</button>
+                            </div>
+                            <div class="status-line" id="module3-part1-status" data-variant="info">Upload ≥10 images or click “Use example dataset” to enable processing.</div>
+                        </form>
+                        <div class="module3-results" aria-live="polite">
+                            <div class="module3-summary" id="module3-part1-summary">Results pair the original photo with a single card that contains the full gradient grid.</div>
+                            <div class="module3-gallery" id="module3-part1-gallery" data-empty="true">
+                                <p class="module3-gallery__placeholder">Run Task 1 to generate the composite grid for every image.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="module3-card" id="module3-part2" aria-labelledby="module3-part2-title">
+                    <header class="module3-card__header">
+                        <div>
+                            <h3 id="module3-part2-title">Part 2 - Edge &amp; Corner Detection</h3>
+                            <p>Highlight sharp edges in green and likely corners in red using vanilla Sobel math.</p>
+                        </div>
+                    </header>
+                    <div class="module3-card__body module3-grid">
+                        <form id="module3-part2-form" aria-label="Module 3 Part 2 form" enctype="multipart/form-data">
+                            <div class="field">
+                                <label class="file-input module3-file-picker">
+                                    <input type="file" id="module3-part2-input" name="images" accept="image/*" multiple>
+                                    <span>Select at least 10 images</span>
+                                </label>
+                                <p class="hint">No ML involved - just gradients and thresholds to color the important edges and corners.</p>
+                                <div class="module3-sample-actions">
+                                    <button type="button" class="subtle-btn module3-sample-btn" id="module3-part2-sample">Use example dataset</button>
+                                    <span class="module3-sample-note">Instantly queues the bundled Module 3 set.</span>
+                                </div>
+                            </div>
+                            <div class="module3-selection" id="module3-part2-selection" data-empty="true">
+                                <p>No dataset selected yet.</p>
+                            </div>
+                            <div class="module3-actions">
+                                <button type="submit" class="primary-btn" id="module3-part2-run" disabled>Run Task 2</button>
+                                <button type="button" class="subtle-btn" id="module3-part2-reset" disabled>Reset</button>
+                            </div>
+                            <div class="status-line" id="module3-part2-status" data-variant="info">Upload ≥10 images or use the example dataset to analyze edges/corners.</div>
+                        </form>
+                        <div class="module3-results" aria-live="polite">
+                            <div class="module3-summary" id="module3-part2-summary">Each gallery entry simply overlays the photo with green edges and red corner markers.</div>
+                            <div class="module3-gallery" id="module3-part2-gallery" data-empty="true">
+                                <p class="module3-gallery__placeholder">Run Task 2 to visualize the detected keypoints.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="module3-card" id="module3-part3" aria-labelledby="module3-part3-title">
+                    <header class="module3-card__header">
+                        <div>
+                            <h3 id="module3-part3-title">Part 3 - Exact Boundary Detection</h3>
+                            <p>Find the main object in every picture and trace its outline in green.</p>
+                        </div>
+                    </header>
+                    <div class="module3-card__body module3-grid">
+                        <form id="module3-part3-form" aria-label="Module 3 Part 3 form" enctype="multipart/form-data">
+                            <div class="field">
+                                <label class="file-input module3-file-picker">
+                                    <input type="file" id="module3-part3-input" name="images" accept="image/*" multiple>
+                                    <span>Select at least 10 images</span>
+                                </label>
+                                <p class="hint">We smooth the photo, keep the cleanest big blob, and draw the contour—no knobs to tweak.</p>
+                                <div class="module3-sample-actions">
+                                    <button type="button" class="subtle-btn module3-sample-btn" id="module3-part3-sample">Use example dataset</button>
+                                    <span class="module3-sample-note">Loads the bundled Module 3 image stack.</span>
+                                </div>
+                            </div>
+                            <div class="module3-selection" id="module3-part3-selection" data-empty="true">
+                                <p>No dataset selected yet.</p>
+                            </div>
+                            <div class="module3-actions">
+                                <button type="submit" class="primary-btn" id="module3-part3-run" disabled>Run Task 3</button>
+                                <button type="button" class="subtle-btn" id="module3-part3-reset" disabled>Reset</button>
+                            </div>
+                            <div class="status-line" id="module3-part3-status" data-variant="info">Upload ≥10 images or use the bundled set to run boundary detection.</div>
+                        </form>
+                        <div class="module3-results" aria-live="polite">
+                            <div class="module3-summary" id="module3-part3-summary">Outputs show the dominant object outlined in green for quick scanning.</div>
+                            <div class="module3-gallery" id="module3-part3-gallery" data-empty="true">
+                                <p class="module3-gallery__placeholder">Run Task 3 to render the boundary overlays.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="module3-card" id="module3-part4" aria-labelledby="module3-part4-title">
+                    <header class="module3-card__header">
+                        <div>
+                            <h3 id="module3-part4-title">Part 4 - Marker-Guided GrabCut</h3>
+                            <p>Use ArUco markers to pin the object's outline and carve it out with GrabCut.</p>
+                        </div>
+                    </header>
+                    <div class="module3-card__body module3-grid">
+                        <form id="module3-part4-form" aria-label="Module 3 Part 4 form" enctype="multipart/form-data">
+                            <div class="field">
+                                <label class="file-input module3-file-picker">
+                                    <input type="file" id="module3-part4-input" name="images" accept="image/*" multiple>
+                                    <span>Select at least 10 images</span>
+                                </label>
+                                <p class="hint">Each upload must show the object with ArUco markers taped around it so the boundary can lock on.</p>
+                                <div class="module3-sample-actions">
+                                    <button type="button" class="subtle-btn module3-sample-btn" id="module3-part4-sample">Use example dataset</button>
+                                    <span class="module3-sample-note">Loads resources/m3/part2 (ignores *_detect* files).</span>
+                                </div>
+                            </div>
+                            <div class="module3-selection" id="module3-part4-selection" data-empty="true">
+                                <p>No dataset selected yet.</p>
+                            </div>
+                            <div class="module3-actions">
+                                <button type="submit" class="primary-btn" id="module3-part4-run" disabled>Run Task 4</button>
+                                <button type="button" class="subtle-btn" id="module3-part4-reset" disabled>Reset</button>
+                            </div>
+                            <div class="status-line" id="module3-part4-status" data-variant="info">Upload ≥10 images or click "Use example dataset" to enable the cutout.</div>
+                        </form>
+                        <div class="module3-results" aria-live="polite">
+                            <div class="module3-summary" id="module3-part4-summary">Outputs pair the original frame with a marker-guided cutout.</div>
+                            <div class="module3-gallery" id="module3-part4-gallery" data-empty="true">
+                                <p class="module3-gallery__placeholder">Run Task 4 to see the segmented overlays.</p>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="module3-card module3-card--stub" id="module3-part5" aria-labelledby="module3-part5-title">
+                    <header class="module3-card__header">
+                        <div>
+                            <h3 id="module3-part5-title">Part 5 - Coming Soon</h3>
+                            <p>Placeholder for the final Module 3 stretch goal once the scope is locked.</p>
+                        </div>
+                    </header>
+                    <div class="module3-card__body">
+                        <p class="module3-stub-note">This tile mirrors the CLI stub so the web UI is ready the moment Part 5 specs land.</p>
+                        <button type="button" class="primary-btn" disabled>Implementation pending</button>
+                    </div>
+                </section>
             </div>
             <!-- Watch the video (collapsed by default) -->
             <section class="video-section" aria-labelledby="video-toggle-a3">

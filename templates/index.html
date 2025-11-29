@@ -1073,12 +1073,166 @@
             <section class="module7-card" id="module7-part1" aria-labelledby="module7-part1-title">
                 <header class="module7-card__header">
                     <div>
-                        <h3 id="module7-part1-title">Part 1 - Stereo Depth (Preview)</h3>
-                        <p>The calibrated stereo reconstruction UI is coming soon. This placeholder keeps the tab structure ready for the final deliverable.</p>
+                        <h3 id="module7-part1-title">Part 1 - Calibrated Stereo Depth &amp; Measurements</h3>
+                        <p>Follow the exact CLI workflow inside the browser: calibrate with a reference image, triangulate depth from a stereo pair, then measure arbitrary segments.</p>
                     </div>
+                    <button type="button" class="subtle-btn" id="module7-example-btn">Use example dataset</button>
                 </header>
-                <div class="module7-card__body">
-                    <p class="module7-note">Check back for the interactive stereo measurement workflow once the assets are finalized.</p>
+                <div class="module7-card__body module7-part1-body">
+                    <div class="module7-alert" role="status">
+                        ⚠️ All three images (reference, left, right) <strong>must be captured by the same camera</strong>. Mixing devices will break the calibration model.
+                    </div>
+
+                    <article class="m7-step-card" id="module7-calibration-card">
+                        <header class="m7-step-header">
+                            <span class="step-pill">Step 1</span>
+                            <div>
+                                <h4>Calibrate with a reference image</h4>
+                                <p>Upload the reference frame, click two points across a known width, and enter the real-world measurements (centimeters only) to recover the focal length.</p>
+                            </div>
+                        </header>
+                        <div class="m7-step-body">
+                            <div class="m7-file-row">
+                                <label class="file-input">
+                                    <input type="file" accept="image/*" id="module7-ref-input">
+                                    <span>Choose reference image</span>
+                                </label>
+                                <button type="button" class="subtle-btn" id="module7-ref-clear" disabled>Clear image</button>
+                            </div>
+                            <div class="canvas-wrapper" data-state="empty">
+                                <canvas id="module7-ref-canvas" class="measure-canvas" role="img" aria-label="Module 7 reference image"></canvas>
+                                <div class="canvas-empty" id="module7-ref-empty">Upload the reference image, then click the LEFT and RIGHT edges of the known object.</div>
+                            </div>
+                            <div class="point-controls">
+                                <div>
+                                    <span class="metric-label">Pixel width</span>
+                                    <span class="metric-value" id="module7-ref-px">--</span>
+                                </div>
+                                <button type="button" class="subtle-btn" id="module7-ref-reset" disabled>Reset points</button>
+                            </div>
+                            <div class="field-grid">
+                                <label class="field">
+                                    <span>Real width (cm)</span>
+                                    <input type="number" id="module7-ref-real-width" min="0" step="0.01" placeholder="e.g. 15">
+                                </label>
+                                <label class="field">
+                                    <span>Camera distance (cm)</span>
+                                    <input type="number" id="module7-ref-distance" min="0" step="0.1" placeholder="e.g. 33">
+                                </label>
+                            </div>
+                            <button type="button" class="primary-btn" id="module7-ref-calc" disabled>Store focal length</button>
+                            <div class="status-line" id="module7-ref-status">Upload the reference image to begin calibration.</div>
+                        </div>
+                    </article>
+
+                    <article class="m7-step-card locked" id="module7-stereo-card" aria-disabled="true">
+                        <header class="m7-step-header">
+                            <span class="step-pill">Step 2</span>
+                            <div>
+                                <h4>Recover Z distance from a stereo pair</h4>
+                                <p>Load the left/right frames captured by the same camera, click a matching point in each, and enter the baseline (camera translation) in cm.</p>
+                            </div>
+                        </header>
+                        <div class="m7-step-body">
+                            <div class="m7-file-row">
+                                <div class="m7-file-column">
+                                    <label class="file-input">
+                                        <input type="file" accept="image/*" id="module7-left-input" disabled>
+                                        <span>Choose LEFT image</span>
+                                    </label>
+                                    <button type="button" class="subtle-btn" id="module7-left-clear" disabled>Clear left</button>
+                                </div>
+                                <div class="m7-file-column">
+                                    <label class="file-input">
+                                        <input type="file" accept="image/*" id="module7-right-input" disabled>
+                                        <span>Choose RIGHT image</span>
+                                    </label>
+                                    <button type="button" class="subtle-btn" id="module7-right-clear" disabled>Clear right</button>
+                                </div>
+                            </div>
+                            <div class="m7-dual-canvas">
+                                <div class="canvas-wrapper" data-state="empty">
+                                    <canvas id="module7-left-canvas" class="measure-canvas" role="img" aria-label="Module 7 left image"></canvas>
+                                    <div class="canvas-empty" id="module7-left-empty">After calibration, load the LEFT stereo frame and click a target point.</div>
+                                </div>
+                                <div class="canvas-wrapper" data-state="empty">
+                                    <canvas id="module7-right-canvas" class="measure-canvas" role="img" aria-label="Module 7 right image"></canvas>
+                                    <div class="canvas-empty" id="module7-right-empty">Load the RIGHT frame, then click the same point you chose in the left image.</div>
+                                </div>
+                            </div>
+                            <div class="m7-disparity-grid">
+                                <div>
+                                    <span class="metric-label">Left click (px)</span>
+                                    <span class="metric-value" id="module7-left-point">--</span>
+                                </div>
+                                <div>
+                                    <span class="metric-label">Right click (px)</span>
+                                    <span class="metric-value" id="module7-right-point">--</span>
+                                </div>
+                                <div>
+                                    <span class="metric-label">Disparity</span>
+                                    <span class="metric-value" id="module7-disparity">--</span>
+                                </div>
+                            </div>
+                            <div class="field-grid single">
+                                <label class="field">
+                                    <span>Baseline (cm)</span>
+                                    <input type="number" id="module7-baseline" min="0" step="0.01" placeholder="e.g. 3.8" disabled>
+                                </label>
+                            </div>
+                            <button type="button" class="primary-btn" id="module7-depth-btn" disabled>Calculate depth</button>
+                            <div class="status-line" id="module7-stereo-status">Finish Step 1 to unlock the stereo depth tools.</div>
+                        </div>
+                    </article>
+
+                    <article class="m7-step-card locked" id="module7-measure-card" aria-disabled="true">
+                        <header class="m7-step-header">
+                            <span class="step-pill">Step 3</span>
+                            <div>
+                                <h4>Measure arbitrary segments</h4>
+                                <p>Using the stored focal length and Z distance, click any number of point pairs on the LEFT image to derive their real-world length.</p>
+                            </div>
+                        </header>
+                        <div class="m7-step-body">
+                            <div class="m7-measure-layout">
+                                <div class="canvas-wrapper" data-state="empty">
+                                    <canvas id="module7-measure-canvas" class="measure-canvas" role="img" aria-label="Module 7 measurement canvas"></canvas>
+                                    <div class="canvas-empty" id="module7-measure-empty">Once a stereo depth is computed, the LEFT frame will appear here for measurement.</div>
+                                </div>
+                                <div class="m7-measure-panel">
+                                    <div class="m7-summary-grid">
+                                        <div>
+                                            <span class="metric-label">Focal length (px)</span>
+                                            <span class="metric-value" id="module7-summary-focal">--</span>
+                                        </div>
+                                        <div>
+                                            <span class="metric-label">Depth Z (cm)</span>
+                                            <span class="metric-value" id="module7-summary-depth">--</span>
+                                        </div>
+                                        <div>
+                                            <span class="metric-label">Disparity (px)</span>
+                                            <span class="metric-value" id="module7-summary-disparity">--</span>
+                                        </div>
+                                        <div>
+                                            <span class="metric-label">Baseline (cm)</span>
+                                            <span class="metric-value" id="module7-summary-baseline">--</span>
+                                        </div>
+                                    </div>
+                                    <div class="m7-measure-actions">
+                                        <p>Click points A and B on the image to log a measurement. Repeat for as many segments as you want.</p>
+                                        <button type="button" class="subtle-btn" id="module7-measure-reset" disabled>Clear measurements</button>
+                                    </div>
+                                    <div class="m7-measure-results" aria-live="polite">
+                                        <h5>Measurements</h5>
+                                        <ol id="module7-measurements-list">
+                                            <li class="placeholder">No measurements yet.</li>
+                                        </ol>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="status-line" id="module7-measure-status">Calculate stereo depth to unlock the measurement canvas.</div>
+                        </div>
+                    </article>
                 </div>
             </section>
 

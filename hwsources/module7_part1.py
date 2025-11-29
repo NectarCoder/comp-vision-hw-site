@@ -3,6 +3,26 @@ import math
 import os
 import numpy as np
 
+
+# --- SHARED COMPUTATION HELPERS ---
+
+def compute_focal_length_from_reference(pixel_width: float, real_width_cm: float, distance_cm: float) -> float:
+    if real_width_cm == 0:
+        raise ValueError("Real-world width must be non-zero")
+    return (pixel_width * distance_cm) / real_width_cm
+
+
+def compute_depth_from_stereo(focal_length: float, baseline_cm: float, disparity_px: float) -> float:
+    if disparity_px == 0:
+        raise ValueError("Disparity must be non-zero")
+    return (focal_length * baseline_cm) / disparity_px
+
+
+def compute_real_size_from_depth(pixel_distance: float, focal_length: float, depth_cm: float) -> float:
+    if focal_length == 0:
+        raise ValueError("Focal length must be non-zero")
+    return (pixel_distance * depth_cm) / focal_length
+
 # --- UTILITY FUNCTIONS ---
 
 def prompt_float(prompt_text):
@@ -97,7 +117,7 @@ def get_focal_length():
     cv2.destroyAllWindows()
 
     pixel_width = math.dist(points[0], points[1])
-    focal_length = (pixel_width * real_dist) / real_width
+    focal_length = compute_focal_length_from_reference(pixel_width, real_width, real_dist)
     
     print(f"\n[CALIBRATION RESULT]")
     print(f"Pixel Width: {pixel_width:.2f} px")
@@ -176,13 +196,12 @@ def get_stereo_depth(focal_length):
         return None, None
 
     disparity = abs(disp_x_left - disp_x_right)
-    
+
     if disparity == 0:
         print("Error: Zero disparity selected (points are identical). Cannot calculate depth.")
         return None, None
 
-    # Z = (f * B) / d
-    Z = (focal_length * baseline) / disparity
+    Z = compute_depth_from_stereo(focal_length, baseline, disparity)
     
     print(f"\n[STEREO RESULT]")
     print(f"Disparity: {disparity} px")
@@ -222,7 +241,7 @@ def measure_segments(image, focal_length, distance_Z):
                 
                 # Math
                 px_dist = math.dist(pt1, pt2)
-                real_size = (px_dist * distance_Z) / focal_length
+                real_size = compute_real_size_from_depth(px_dist, focal_length, distance_Z)
                 
                 # Store
                 measurements.append(real_size)

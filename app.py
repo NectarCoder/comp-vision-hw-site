@@ -1,6 +1,7 @@
 import base64
 import csv
 import io
+import re
 import shutil
 import subprocess
 import zipfile
@@ -24,6 +25,11 @@ import hwsources.module3_part2 as module3_part2
 import hwsources.module4_part1 as module4_part1
 import hwsources.module4_part2 as module4_part2
 import hwsources.module7_part2 as module7_part2
+from hwsources.module7_part1 import (
+    compute_focal_length_from_reference,
+    compute_depth_from_stereo,
+    compute_real_size_from_depth,
+)
 
 # Serve static assets from the templates folder so they can be moved
 # from /static into /templates while keeping the same "url_for('static', ...)"
@@ -52,6 +58,11 @@ MODULE4_MIN_IMAGES = 8
 MODULE4_SAMPLE_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm4'
 MODULE7_RESOURCES_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm7'
 MODULE7_PART2_SAMPLE = MODULE7_RESOURCES_DIR / 'karate.mp4'
+MODULE7_PART1_DIR = MODULE7_RESOURCES_DIR / 'part1'
+MODULE7_PART1_REFERENCE = MODULE7_PART1_DIR / 'ref.jpeg'
+MODULE7_PART1_LEFT = MODULE7_PART1_DIR / 'left.jpeg'
+MODULE7_PART1_RIGHT = MODULE7_PART1_DIR / 'right.jpeg'
+MODULE7_PART1_MEASUREMENTS = MODULE7_PART1_DIR / 'measurements.md'
 
 VIDEO_MIME_MAP = {
     '.mp4': 'video/mp4',
@@ -1035,6 +1046,80 @@ def _load_module1_samples():
     }
 
 
+def _load_module7_part1_measurements():
+    """Parse the Module 7 Part 1 measurements markdown (cm values only)."""
+    if not MODULE7_PART1_MEASUREMENTS.exists():
+        raise FileNotFoundError(f"Module 7 Part 1 measurements missing: {MODULE7_PART1_MEASUREMENTS}")
+
+    text = MODULE7_PART1_MEASUREMENTS.read_text(encoding='utf-8')
+    values = {
+        'referenceDistanceCm': None,
+        'referenceWidthCm': None,
+        'baselineCm': None
+    }
+
+    def extract_cm(fragment: str):
+        match = re.search(r'([0-9]+(?:\.[0-9]+)?)\s*cm', fragment)
+        return float(match.group(1)) if match else None
+
+    baseline_pending = False
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        lower = line.lower()
+        value = extract_cm(lower)
+
+        if 'distance from camera' in lower and value is not None:
+            values['referenceDistanceCm'] = value
+            baseline_pending = False
+        elif 'width of object' in lower and value is not None:
+            values['referenceWidthCm'] = value
+            baseline_pending = False
+        elif 'point difference' in lower or 'baseline' in lower:
+            if value is not None:
+                values['baselineCm'] = value
+                baseline_pending = False
+            else:
+                baseline_pending = True
+        elif baseline_pending and value is not None:
+            values['baselineCm'] = value
+            baseline_pending = False
+
+        if all(v is not None for v in values.values()):
+            break
+
+    return values
+
+
+def _load_module7_part1_samples():
+    required = [MODULE7_PART1_REFERENCE, MODULE7_PART1_LEFT, MODULE7_PART1_RIGHT]
+    missing = [path for path in required if not path.exists()]
+    if missing:
+        raise FileNotFoundError(f"Module 7 Part 1 sample asset missing: {missing[0]}")
+
+    try:
+        measurements = _load_module7_part1_measurements()
+    except FileNotFoundError:
+        measurements = {}
+
+    return {
+        'reference': {
+            'filename': MODULE7_PART1_REFERENCE.name,
+            'image': _image_file_to_data_url(MODULE7_PART1_REFERENCE)
+        },
+        'left': {
+            'filename': MODULE7_PART1_LEFT.name,
+            'image': _image_file_to_data_url(MODULE7_PART1_LEFT)
+        },
+        'right': {
+            'filename': MODULE7_PART1_RIGHT.name,
+            'image': _image_file_to_data_url(MODULE7_PART1_RIGHT)
+        },
+        'measurements': measurements
+    }
+
+
 @app.route('/api/a1/focal-length', methods=['POST'])
 def module1_calculate_focal_length():
     data = request.get_json(silent=True) or {}
@@ -1100,6 +1185,75 @@ def module1_calculate_real_width():
         'realWidth': real_width,
         'testPixelWidth': pixel_width,
         'testDistance': distance,
+        'focalLength': focal_length
+    })
+
+
+@app.route('/api/a7/part1/sample', methods=['GET'])
+def module7_part1_sample():
+    try:
+        data = _load_module7_part1_samples()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load Module 7 Part 1 sample: {exc}'}), 500
+
+    return jsonify(data)
+
+
+@app.route('/api/a7/part1/focal-length', methods=['POST'])
+def module7_part1_focal_length():
+    data = request.get_json(silent=True) or {}
+    try:
+        pixel_width = _parse_numeric(data, 'pixelWidth')
+        real_width = _parse_numeric(data, 'realWidth')
+        distance = _parse_numeric(data, 'distance')
+        focal_length = compute_focal_length_from_reference(pixel_width, real_width, distance)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    return jsonify({
+        'focalLength': focal_length,
+        'refPixelWidth': pixel_width,
+        'refRealWidth': real_width,
+        'refDistance': distance
+    })
+
+
+@app.route('/api/a7/part1/depth', methods=['POST'])
+def module7_part1_depth():
+    data = request.get_json(silent=True) or {}
+    try:
+        focal_length = _parse_numeric(data, 'focalLength')
+        baseline = _parse_numeric(data, 'baseline')
+        disparity = _parse_numeric(data, 'disparity')
+        depth_cm = compute_depth_from_stereo(focal_length, baseline, disparity)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    return jsonify({
+        'depthCm': depth_cm,
+        'baselineCm': baseline,
+        'disparityPx': disparity,
+        'focalLength': focal_length
+    })
+
+
+@app.route('/api/a7/part1/measure', methods=['POST'])
+def module7_part1_measure_segment():
+    data = request.get_json(silent=True) or {}
+    try:
+        pixel_distance = _parse_numeric(data, 'pixelDistance')
+        focal_length = _parse_numeric(data, 'focalLength')
+        depth = _parse_numeric(data, 'depth')
+        real_size = compute_real_size_from_depth(pixel_distance, focal_length, depth)
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    return jsonify({
+        'realSizeCm': real_size,
+        'pixelDistance': pixel_distance,
+        'depthCm': depth,
         'focalLength': focal_length
     })
 

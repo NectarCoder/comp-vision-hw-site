@@ -348,6 +348,7 @@ document.addEventListener('DOMContentLoaded', initModule2Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part1Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
 document.addEventListener('DOMContentLoaded', initModule3Flow);
+document.addEventListener('DOMContentLoaded', initModule3Part5Showcase);
 document.addEventListener('DOMContentLoaded', initModule4Flow);
 
 (function () {
@@ -2024,6 +2025,258 @@ function initModule3Flow() {
     ];
 
     configs.forEach((cfg) => setupModule3Part(cfg));
+}
+
+function initModule3Part5Showcase() {
+    const gallery = document.getElementById('module3-part5-gallery');
+    const summaryEl = document.getElementById('module3-part5-summary');
+    if (!gallery || !summaryEl) return;
+
+    const refreshBtn = document.getElementById('module3-part5-refresh');
+    const commandEl = document.getElementById('module3-part5-command');
+    const depsEl = document.getElementById('module3-part5-deps');
+    let isLoading = false;
+    let hasLoaded = false;
+    let lightboxOverlay = null;
+    let lightboxImage = null;
+
+    const initCliCopyButtons = () => {
+        const snippets = document.querySelectorAll('.module3-cli-snippet');
+        snippets.forEach((snippet) => {
+            const button = snippet.querySelector('.module3-copy-btn');
+            const toast = snippet.querySelector('.module3-copy-toast');
+            if (!button) return;
+
+            let toastTimer = null;
+
+            const showToast = () => {
+                if (!toast) return;
+                toast.classList.add('module3-copy-toast--visible');
+                if (toastTimer) clearTimeout(toastTimer);
+                toastTimer = setTimeout(() => {
+                    toast.classList.remove('module3-copy-toast--visible');
+                }, 1800);
+            };
+
+            button.addEventListener('click', async () => {
+                const targetId = button.dataset.copyTarget;
+                const target = targetId ? document.getElementById(targetId) : null;
+                const text = target ? target.textContent.trim() : '';
+                if (!text) return;
+
+                try {
+                    if (navigator?.clipboard?.writeText) {
+                        await navigator.clipboard.writeText(text);
+                    } else {
+                        throw new Error('Clipboard API unavailable');
+                    }
+                } catch (err) {
+                    const textarea = document.createElement('textarea');
+                    textarea.value = text;
+                    textarea.style.position = 'fixed';
+                    textarea.style.opacity = '0';
+                    document.body.appendChild(textarea);
+                    textarea.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(textarea);
+                }
+
+                showToast();
+            });
+        });
+    };
+
+    const ensureLightbox = () => {
+        if (lightboxOverlay) return;
+        lightboxOverlay = document.createElement('div');
+        lightboxOverlay.className = 'module3-lightbox';
+        lightboxOverlay.setAttribute('role', 'dialog');
+        lightboxOverlay.setAttribute('aria-modal', 'true');
+
+        const closeBtn = document.createElement('button');
+        closeBtn.type = 'button';
+        closeBtn.className = 'module3-lightbox__close';
+        closeBtn.setAttribute('aria-label', 'Close preview');
+        closeBtn.textContent = '✕';
+
+        lightboxImage = document.createElement('img');
+        lightboxImage.className = 'module3-lightbox__img';
+        lightboxImage.alt = '';
+
+        lightboxOverlay.appendChild(closeBtn);
+        lightboxOverlay.appendChild(lightboxImage);
+        document.body.appendChild(lightboxOverlay);
+
+        const closeLightbox = () => {
+            lightboxOverlay?.classList.remove('module3-lightbox--open');
+            document.body.classList.remove('module3-lightbox-open');
+        };
+
+        closeBtn.addEventListener('click', closeLightbox);
+        lightboxOverlay.addEventListener('click', (event) => {
+            if (event.target === lightboxOverlay) {
+                closeLightbox();
+            }
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && lightboxOverlay?.classList.contains('module3-lightbox--open')) {
+                closeLightbox();
+            }
+        });
+        lightboxOverlay.closeLightbox = closeLightbox; // custom property for reuse
+    };
+
+    const openLightbox = (src, altText) => {
+        ensureLightbox();
+        if (!lightboxOverlay || !lightboxImage) return;
+        lightboxImage.src = src;
+        lightboxImage.alt = altText || 'Preview image';
+        lightboxOverlay.classList.add('module3-lightbox--open');
+        document.body.classList.add('module3-lightbox-open');
+    };
+
+    const setSummary = (message) => {
+        summaryEl.textContent = message;
+    };
+
+    const setPlaceholder = (message, variant = 'info') => {
+        gallery.dataset.empty = 'true';
+        gallery.innerHTML = '';
+        const note = document.createElement('p');
+        note.className = 'module3-gallery__placeholder';
+        note.dataset.variant = variant;
+        note.textContent = message;
+        gallery.appendChild(note);
+    };
+
+    const createFigure = (src, label, filename, extraClass) => {
+        const figure = document.createElement('figure');
+        figure.className = 'module3-result-figure';
+        figure.classList.add('module3-result-figure--interactive');
+        if (extraClass) {
+            figure.classList.add(extraClass);
+        }
+
+        if (src) {
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = `${label} – ${filename || 'image'}`;
+            img.loading = 'lazy';
+            img.tabIndex = 0;
+            figure.appendChild(img);
+        } else {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'module3-result-placeholder';
+            placeholder.textContent = 'Preview unavailable';
+            figure.appendChild(placeholder);
+        }
+
+        const caption = document.createElement('figcaption');
+        caption.textContent = label;
+        figure.appendChild(caption);
+        return figure;
+    };
+
+    const renderGallery = (entries) => {
+        const items = Array.isArray(entries) ? entries : [];
+        if (!items.length) {
+            setPlaceholder('No showcase frames are available right now.', 'warning');
+            return;
+        }
+
+        gallery.dataset.empty = 'false';
+        gallery.innerHTML = '';
+        items.forEach((entry, index) => {
+            const card = document.createElement('article');
+            card.className = 'module3-result-card module3-result-card--showcase';
+
+            const header = document.createElement('div');
+            header.className = 'module3-result-card__header';
+            const title = document.createElement('strong');
+            title.textContent = `${index + 1}. ${entry.filename || 'Image'}`;
+            header.appendChild(title);
+
+            const tag = document.createElement('span');
+            tag.className = 'module3-result-tag';
+            tag.textContent = 'ArUco vs SAM2';
+            header.appendChild(tag);
+            card.appendChild(header);
+
+            const figures = document.createElement('div');
+            figures.className = 'module3-result-images';
+            figures.appendChild(createFigure(entry.originalImage, 'ArUco GrabCut baseline', entry.filename, 'module3-result-figure--baseline'));
+            figures.appendChild(createFigure(entry.samImage, 'SAM2 segmentation', entry.filename, 'module3-result-figure--sam'));
+            card.appendChild(figures);
+
+            gallery.appendChild(card);
+        });
+    };
+
+    const loadGallery = async ({ force = false } = {}) => {
+        if (isLoading) return;
+        if (hasLoaded && !force) return;
+        isLoading = true;
+        setPlaceholder('Loading offline comparisons…', 'info');
+
+        try {
+            const response = await fetch('/api/a3/part5/gallery');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to load showcase.');
+
+            renderGallery(data.results || []);
+            if (data.metadata?.command && commandEl) {
+                commandEl.textContent = data.metadata.command;
+            }
+            if (data.metadata?.pipPackages && Array.isArray(data.metadata.pipPackages) && depsEl) {
+                depsEl.textContent = `pip install ${data.metadata.pipPackages.join(' ')}`;
+            }
+            const count = data.count ?? (data.results ? data.results.length : 0);
+            const descriptor = data.metadata?.model ? `${data.metadata.model} on ${data.metadata?.device || 'GPU'}` : 'SAM2 run';
+            setSummary(data.message || `Loaded ${count} comparisons from the offline ${descriptor}.`);
+            hasLoaded = true;
+        } catch (err) {
+            console.error(err);
+            setPlaceholder(err.message || 'Failed to load showcase.', 'error');
+            setSummary(err.message || 'Failed to load showcase.');
+        } finally {
+            isLoading = false;
+        }
+    };
+
+    if (refreshBtn) {
+        refreshBtn.addEventListener('click', () => {
+            hasLoaded = false;
+            loadGallery({ force: true });
+        });
+    }
+
+    gallery.addEventListener('click', (event) => {
+        const img = event.target.closest('img');
+        if (!img || !gallery.contains(img)) return;
+        openLightbox(img.src, img.alt);
+    });
+
+    gallery.addEventListener('keydown', (event) => {
+        if (event.key !== 'Enter' && event.key !== ' ') return;
+        const img = event.target;
+        if (!img || img.tagName !== 'IMG' || !gallery.contains(img)) return;
+        event.preventDefault();
+        openLightbox(img.src, img.alt);
+    });
+
+    const activeTab = document.getElementById('a3');
+    if (activeTab && activeTab.classList.contains('active')) {
+        loadGallery();
+    }
+
+    registerTabChangeListener((_, next) => {
+        if (next === 'a3') {
+            loadGallery();
+        }
+    });
+
+    initCliCopyButtons();
+    ensureLightbox();
 }
 
 function setupModule3Part(config) {

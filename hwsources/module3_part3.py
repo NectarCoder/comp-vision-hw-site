@@ -1,18 +1,4 @@
-"""Module 3 Part 3 – SAM2 vs. ArUco segmentation comparison.
-
-This script mirrors the CLI of ``module3_part2.py`` but swaps the segmentation
-stage with the Segment Anything 2 (SAM2) image predictor. For each input image
-containing ArUco markers, we:
-
-1. Reuse the ArUco + GrabCut pipeline from Part 2 to establish a baseline mask.
-2. Convert the detected marker hull into a bounding box prompt for SAM2.
-3. Run SAM2 to produce a second mask of the same object.
-4. Compute the IoU between both masks and save a side-by-side visualization in
-   the source folder (suffix ``_sam2`` by default).
-
-The user must provide valid SAM2 configuration + checkpoint files. Refer to the
-official SAM2 release for download instructions.
-"""
+#TODO: add description
 
 from __future__ import annotations
 
@@ -25,16 +11,8 @@ from typing import Any, Iterable, Sequence, Tuple
 
 import cv2
 import numpy as np
-
-try:  # Optional heavy dependencies (PyTorch + SAM2)
-	import torch
-except ImportError:  # pragma: no cover - torch is optional during linting
-	torch = None  # type: ignore[assignment]
-
-try:
-	import module3_part2 as aruco_module
-except ModuleNotFoundError:  # Allows ``python -m hwsources.module3_part3``
-	from hwsources import module3_part2 as aruco_module  # type: ignore
+import torch
+import module3_part2 as aruco_module
 
 
 LOGGER = logging.getLogger("module3_part3")
@@ -78,20 +56,26 @@ def _build_argument_parser() -> argparse.ArgumentParser:
 	parser.add_argument(
 		"--bbox-scale",
 		type=float,
-		default=0.2,
-		help="Extra padding applied to the SAM2 bounding box prompt (default: 0.2).",
+		default=0.05,
+		help="Extra padding applied to the SAM2 bounding box prompt (default: 0.05).",
+	)
+	parser.add_argument(
+		"--prompt-points",
+		type=int,
+		default=4,
+		help="Number of positive point prompts sampled from the hull (default: 4, 0 to disable).",
 	)
 	parser.add_argument(
 		"--model-config",
 		type=Path,
-		default=Path("checkpoints/sam2_hiera_l.yaml"),
-		help="Path to the SAM2 model configuration YAML.",
+		required=True,
+		help="Absolute or relative path to the SAM2 YAML config downloaded locally.",
 	)
 	parser.add_argument(
 		"--checkpoint",
 		type=Path,
-		default=Path("checkpoints/sam2_hiera_large.pt"),
-		help="Path to the SAM2 checkpoint file (.pt).",
+		required=True,
+		help="Absolute or relative path to the SAM2 model weights (.pt) stored locally.",
 	)
 	parser.add_argument(
 		"--device",
@@ -122,13 +106,18 @@ def _resolve_device(device_arg: str) -> str:
 
 
 def _load_sam2_predictor(config_path: Path, checkpoint_path: Path, device_arg: str) -> Sam2Runtime | None:
-	try:  # Local import keeps this module importable without SAM2 installed.
-		from sam2.build_sam import build_sam2  # type: ignore
+	try:
+		from hydra.utils import instantiate  # type: ignore
+		from omegaconf import OmegaConf  # type: ignore
 		from sam2.sam2_image_predictor import SAM2ImagePredictor  # type: ignore
 	except ImportError:
 		LOGGER.error(
-			"SAM2 dependencies are missing. Install 'sam2' and 'torch' as listed in setup_venv/requirements.txt."
+			"SAM2 dependencies are missing. Install 'sam2', 'hydra-core', 'omegaconf', and 'torch' as listed in setup_venv/requirements.txt."
 		)
+		return None
+
+	if torch is None:
+		LOGGER.error("PyTorch is not installed; SAM2 cannot run without torch.")
 		return None
 
 	config_path = config_path.expanduser()
@@ -143,12 +132,38 @@ def _load_sam2_predictor(config_path: Path, checkpoint_path: Path, device_arg: s
 	device = _resolve_device(device_arg)
 	LOGGER.info("Loading SAM2 model (config=%s, checkpoint=%s, device=%s)", config_path, checkpoint_path, device)
 	try:
-		model = build_sam2(str(config_path), str(checkpoint_path), device=device)
+		cfg = OmegaConf.load(str(config_path))
+		OmegaConf.resolve(cfg)
+		if "model" not in cfg:
+			raise ValueError("Configuration file is missing the 'model' key required for instantiation.")
+		model = instantiate(cfg["model"], _recursive_=True)
+		state_dict = _load_checkpoint_state(checkpoint_path)
+		missing_keys, unexpected_keys = model.load_state_dict(state_dict)
+		if missing_keys:
+			raise RuntimeError(f"Checkpoint is missing keys: {missing_keys}")
+		if unexpected_keys:
+			raise RuntimeError(f"Checkpoint has unexpected keys: {unexpected_keys}")
+		model = model.to(device)
+		model.eval()
 		predictor = SAM2ImagePredictor(model)
 		return Sam2Runtime(predictor=predictor, device=device)
 	except Exception as exc:  # noqa: BLE001 - bubble up helpful message
 		LOGGER.exception("Failed to initialize SAM2: %s", exc)
 		return None
+
+
+def _load_checkpoint_state(checkpoint_path: Path) -> dict:
+	load_kwargs = {"map_location": "cpu"}
+	try:
+		weights = torch.load(str(checkpoint_path), weights_only=True, **load_kwargs)  # type: ignore[arg-type]
+	except TypeError:
+		weights = torch.load(str(checkpoint_path), **load_kwargs)
+
+	if isinstance(weights, dict):
+		if "model" in weights and isinstance(weights["model"], dict):
+			return weights["model"]
+		return weights
+	raise TypeError("Checkpoint did not contain a valid state dictionary.")
 
 
 def _segment_with_aruco(
@@ -196,18 +211,53 @@ def _compute_bounding_box(
 	return bbox
 
 
-def _segment_with_sam2(runtime: Sam2Runtime, image: np.ndarray, bbox: np.ndarray) -> np.ndarray | None:
+def _build_prompt_points(hull: np.ndarray, count: int, image_shape: Tuple[int, int]) -> Tuple[np.ndarray, np.ndarray] | Tuple[None, None]:
+	if count <= 0 or hull.size == 0:
+		return None, None
+	count = min(count, len(hull))
+	indices = np.linspace(0, len(hull) - 1, num=count, dtype=int)
+	selected = hull[indices]
+	centroid = hull.mean(axis=0, keepdims=True)
+	points = np.vstack([selected, centroid])
+	w, h = image_shape
+	points[:, 0] = np.clip(points[:, 0], 0, w - 1)
+	points[:, 1] = np.clip(points[:, 1], 0, h - 1)
+	labels = np.ones(len(points), dtype=np.int32)
+	return points.astype(np.float32), labels.astype(np.int32)
+
+
+
+def _segment_with_sam2(
+	runtime: Sam2Runtime,
+	image: np.ndarray,
+	bbox: np.ndarray,
+	hull: np.ndarray,
+	aruco_mask: np.ndarray,
+	prompt_points: int,
+) -> Tuple[np.ndarray, float] | Tuple[None, None]:
 	image_rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
 	runtime.predictor.set_image(image_rgb)
+	point_coords, point_labels = _build_prompt_points(hull, prompt_points, image.shape[1::-1])
+	predict_kwargs: dict[str, Any] = {"box": bbox, "multimask_output": True}
+	if point_coords is not None and point_labels is not None:
+		predict_kwargs["point_coords"] = point_coords
+		predict_kwargs["point_labels"] = point_labels
 	try:
-		masks, _scores, _logits = runtime.predictor.predict(box=bbox, multimask_output=False)
+		masks, scores, _logits = runtime.predictor.predict(**predict_kwargs)
 	except Exception as exc:  # noqa: BLE001 - log and fail gracefully
 		LOGGER.exception("SAM2 prediction failed: %s", exc)
-		return None
+		return None, None
 	if masks is None or len(masks) == 0:
-		return None
-	mask = (masks[0] * 255).astype(np.uint8)
-	return mask
+		return None, None
+	masks_u8 = [(mask * 255).astype(np.uint8) for mask in masks]
+	best_idx = 0
+	best_iou = -1.0
+	for idx, cand in enumerate(masks_u8):
+		iou = _calculate_iou(aruco_mask, cand)
+		if iou > best_iou:
+			best_iou = iou
+			best_idx = idx
+	return masks_u8[best_idx], float(scores[best_idx] if scores is not None else 0.0)
 
 
 def _calculate_iou(mask_a: np.ndarray, mask_b: np.ndarray) -> float:
@@ -280,6 +330,7 @@ def _process_single_image(
 	aruco_iterations: int,
 	aruco_expansion: float,
 	bbox_scale: float,
+	prompt_points: int,
 ) -> bool:
 	LOGGER.info("Processing %s", image_path.name)
 	image = cv2.imread(str(image_path))
@@ -292,7 +343,7 @@ def _process_single_image(
 		return False
 	hull, aruco_mask, aruco_contour = aruco_result
 	bbox = _compute_bounding_box(hull, image.shape[1::-1], bbox_scale)
-	sam_mask = _segment_with_sam2(runtime, image, bbox)
+	sam_mask, sam_score = _segment_with_sam2(runtime, image, bbox, hull, aruco_mask, prompt_points)
 	if sam_mask is None:
 		LOGGER.warning("SAM2 failed to segment %s", image_path.name)
 		return False
@@ -301,7 +352,7 @@ def _process_single_image(
 	visualization = _compose_visualization(image, aruco_contour, sam_mask, aruco_mask, iou)
 	output_path = _output_path(image_path, suffix)
 	if cv2.imwrite(str(output_path), visualization):
-		LOGGER.info("Saved %s (IoU=%.3f)", output_path.name, iou)
+		LOGGER.info("Saved %s (IoU=%.3f, SAM-score=%.3f)", output_path.name, iou, sam_score or 0.0)
 		return True
 	LOGGER.error("Failed to persist result for %s", image_path.name)
 	return False
@@ -313,6 +364,7 @@ def _run(
 	aruco_iterations: int,
 	aruco_expansion: float,
 	bbox_scale: float,
+	prompt_points: int,
 	runtime: Sam2Runtime,
 ) -> int:
 	if not image_folder.is_dir():
@@ -333,6 +385,7 @@ def _run(
 				aruco_iterations,
 				aruco_expansion,
 				bbox_scale,
+				prompt_points,
 			):
 				successes += 1
 		except cv2.error as exc:
@@ -360,6 +413,7 @@ def main(argv: Sequence[str] | None = None) -> int:
 		args.aruco_iterations,
 		args.aruco_hull_expansion,
 		args.bbox_scale,
+		args.prompt_points,
 		runtime,
 	)
 

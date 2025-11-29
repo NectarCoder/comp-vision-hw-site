@@ -648,16 +648,64 @@
                     </div>
                 </section>
 
-                <section class="module3-card module3-card--stub" id="module3-part5" aria-labelledby="module3-part5-title">
+                <section class="module3-card" id="module3-part5" aria-labelledby="module3-part5-title">
                     <header class="module3-card__header">
                         <div>
-                            <h3 id="module3-part5-title">Part 5 - Coming Soon</h3>
-                            <p>Placeholder for the final Module 3 stretch goal once the scope is locked.</p>
+                            <h3 id="module3-part5-title">Part 5 - SAM2 vs ArUco Showcase</h3>
+                            <p>Browse precomputed comparisons between the ArUco GrabCut baseline and the SAM2.1 Hiera Large model.</p>
                         </div>
                     </header>
-                    <div class="module3-card__body">
-                        <p class="module3-stub-note">This tile mirrors the CLI stub so the web UI is ready the moment Part 5 specs land.</p>
-                        <button type="button" class="primary-btn" disabled>Implementation pending</button>
+                    <div class="module3-card__body module3-showcase">
+                        <div class="module3-showcase__intro">
+                            <p>
+                                This section is static on purpose: SAM2 needs a hefty GPU and custom install, so these frames were generated ahead of time
+                                with <strong>sam2.1_hiera_large</strong> running on an <strong>RTX 4090</strong>. Each gallery item shows the original ArUco scene next to
+                                the SAM2 segmentation that outlines the same object boundary.
+                            </p>
+                            <p>
+                                Want to experiment yourself? Expand the <em>“View CLI source code”</em> dropdown just below this tab, download <code>module3_part3.py</code>,
+                                and run it locally with your own images via the CLI pipeline.
+                            </p>
+                            <div class="module3-showcase__cta">
+                                <button type="button" class="primary-btn" id="module3-part5-refresh">Refresh gallery</button>
+                                <a class="subtle-btn" id="module3-part5-download" href="/api/a3/part5/raw-download" download>
+                                    Download raw dataset (ZIP)
+                                </a>
+                            </div>
+                            <div class="module3-cli-callout" aria-live="polite">
+                                <h4>Run the CLI locally</h4>
+                                <p>Install the extra dependencies and plug in your own folder plus SAM2 weights.</p>
+                                <div class="module3-cli-grid">
+                                    <div>
+                                        <p class="module3-cli-label">Install dependencies</p>
+                                        <div class="module3-cli-snippet">
+                                            <pre><code id="module3-part5-deps">pip install torch sam2 hydra-core omegaconf opencv-python numpy</code></pre>
+                                            <button type="button" class="module3-copy-btn" data-copy-target="module3-part5-deps" aria-label="Copy install command">
+                                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-1v2a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h1V7a3 3 0 0 1 3-3h0Zm-3 5H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5Zm5-5a1 1 0 0 0-1 1v2h5a3 3 0 0 1 3 3v3h2a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-8Z"/></svg>
+                                            </button>
+                                            <span class="module3-copy-toast" role="status" aria-live="polite">Copied!</span>
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <p class="module3-cli-label">Sample command</p>
+                                        <div class="module3-cli-snippet">
+                                            <pre><code id="module3-part5-command">python module3_part3.py &lt;path/to/image-folder&gt; --model-config &lt;path/to/sam2.1_hiera_l.yaml&gt; --checkpoint &lt;path/to/sam2.1_hiera_large.pt&gt; --device [auto|cuda|mps|cpu] --verbose</code></pre>
+                                            <button type="button" class="module3-copy-btn" data-copy-target="module3-part5-command" aria-label="Copy CLI command">
+                                                <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v8a3 3 0 0 1-3 3h-1v2a3 3 0 0 1-3 3H4a3 3 0 0 1-3-3v-8a3 3 0 0 1 3-3h1V7a3 3 0 0 1 3-3h0Zm-3 5H4a1 1 0 0 0-1 1v8a1 1 0 0 0 1 1h9a1 1 0 0 0 1-1v-8a1 1 0 0 0-1-1H5Zm5-5a1 1 0 0 0-1 1v2h5a3 3 0 0 1 3 3v3h2a1 1 0 0 0 1-1V7a1 1 0 0 0-1-1h-8Z"/></svg>
+                                            </button>
+                                            <span class="module3-copy-toast" role="status" aria-live="polite">Copied!</span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <p class="hint">Use the same CLI dropdown to grab the script, then point the command to your own folders/checkpoints as needed.</p>
+                            </div>
+                        </div>
+                        <div class="module3-showcase__results" aria-live="polite">
+                            <div class="module3-summary" id="module3-part5-summary">Offline comparisons load automatically once Module 3 is in view.</div>
+                            <div class="module3-gallery module3-gallery--showcase" id="module3-part5-gallery" data-empty="true">
+                                <p class="module3-gallery__placeholder">Hang tight — fetching the SAM2 results…</p>
+                            </div>
+                        </div>
                     </div>
                 </section>
             </div>

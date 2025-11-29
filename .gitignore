@@ -12,3 +12,7 @@ venv/
 
 # Under hwsources/resources/m3/part2
 *_detect.*
+
+# OS generated files
+.DS_Store
+.ini

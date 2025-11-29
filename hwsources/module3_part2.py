@@ -1,6 +1,7 @@
-#TODO: add description
-
+# TODO: Add description
 from __future__ import annotations
+
+# Segments objects using ArUco markers as an auto-generated GrabCut guide
 
 import argparse
 import logging
@@ -13,11 +14,11 @@ import cv2
 import numpy as np
 
 
+# Tracks segmentation progress and log output for this module
 LOGGER = logging.getLogger("module3_part2")
 
 
 SUPPORTED_SUFFIXES = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
-
 ARUCO_DICTIONARY_NAMES: Tuple[str, ...] = (
 	"DICT_6X6_250",
 	"DICT_6X6_100",
@@ -32,72 +33,44 @@ ARUCO_DICTIONARY_NAMES: Tuple[str, ...] = (
 
 @dataclass
 class DetectionResult:
-	"""Holds the detected marker hull and ids."""
-
 	hull: np.ndarray
 	ids: np.ndarray
 
 
+# Builds the CLI so users can choose folders and tuning knobs
 def _build_argument_parser() -> argparse.ArgumentParser:
-	parser = argparse.ArgumentParser(
-		description="Segment an object boundary using ArUco markers as anchors."
-	)
-	parser.add_argument(
-		"image_folder",
-		type=Path,
-		help="Folder that contains the input images (non-recursive).",
-	)
-	parser.add_argument(
-		"--suffix",
-		default="_detect",
-		help="Suffix to append to output filenames (default: _detect).",
-	)
-	parser.add_argument(
-		"--iterations",
-		type=int,
-		default=5,
-		help="Number of GrabCut refinement iterations (default: 5).",
-	)
-	parser.add_argument(
-		"--hull-expansion",
-		type=float,
-		default=0.15,
-		help="Fractional amount to radially expand the detected marker hull (default: 0.15).",
-	)
-	parser.add_argument(
-		"--verbose",
-		action="store_true",
-		help="Increase logging verbosity.",
-	)
+	parser = argparse.ArgumentParser(description="Segment an object boundary using ArUco markers as anchors.")
+	parser.add_argument("image_folder", type=Path, help="Folder containing the input images (non-recursive).")
+	parser.add_argument("--suffix", default="_detect", help="Suffix appended to output filenames (default: _detect).")
+	parser.add_argument("--iterations", type=int, default=5, help="Number of GrabCut refinement iterations (default: 5).")
+	parser.add_argument("--hull-expansion", type=float, default=0.15, help="Radial hull expansion fraction (default: 0.15).")
+	parser.add_argument("--verbose", action="store_true", help="Increase logging verbosity.")
 	return parser
 
 
+# Configures stdout logging noise level based on the flag
 def _setup_logging(verbose: bool) -> None:
-	logging.basicConfig(
-		level=logging.DEBUG if verbose else logging.INFO,
-		format="%(levelname)s: %(message)s",
-	)
+	logging.basicConfig(level=logging.DEBUG if verbose else logging.INFO, format="%(levelname)s: %(message)s")
 
 
-def _get_detector_parameters(aruco_module) -> "cv2.aruco_DetectorParameters":
-	"""Create detector parameters compatible with different OpenCV versions."""
-
+# Creates detector parameters that work across OpenCV releases
+def _get_detector_parameters(aruco_module):
 	if hasattr(aruco_module, "DetectorParameters"):
 		params_cls = aruco_module.DetectorParameters
-		if hasattr(params_cls, "create") and callable(params_cls.create):
-			return params_cls.create()
-		return params_cls()
+		return params_cls.create() if hasattr(params_cls, "create") and callable(params_cls.create) else params_cls()
 	if hasattr(aruco_module, "DetectorParameters_create"):
 		return aruco_module.DetectorParameters_create()
 	raise AttributeError("Could not instantiate ArUco DetectorParameters; update OpenCV.")
 
 
+# Yields every dictionary constant your OpenCV build supports
 def _iter_available_dictionaries(aruco_module) -> Iterable[int]:
 	for dict_name in ARUCO_DICTIONARY_NAMES:
 		if hasattr(aruco_module, dict_name):
 			yield getattr(aruco_module, dict_name)
 
 
+# Runs the detector API that matches the user's OpenCV version
 def _detect_with_dictionary(gray: np.ndarray, dictionary, parameters, aruco_module):
 	if hasattr(aruco_module, "ArucoDetector"):
 		detector = aruco_module.ArucoDetector(dictionary, parameters)
@@ -106,8 +79,6 @@ def _detect_with_dictionary(gray: np.ndarray, dictionary, parameters, aruco_modu
 
 
 def _detect_aruco_markers(image: np.ndarray) -> DetectionResult | None:
-	"""Detect ArUco markers and return the convex hull of all marker corners."""
-
 	if not hasattr(cv2, "aruco"):
 		LOGGER.error("OpenCV is missing the aruco module; please install opencv-contrib-python.")
 		return None
@@ -131,21 +102,25 @@ def _detect_aruco_markers(image: np.ndarray) -> DetectionResult | None:
 		if marker_count >= 3:
 			break
 
-	if best_ids is None or best_corners is None or best_count < 3:
+	if best_corners is None or best_ids is None or best_count < 3:
 		LOGGER.warning("Detected fewer than 3 markers; skipping image (best=%s).", best_count)
 		return None
 
 	pts = np.vstack([c.reshape(-1, 2) for c in best_corners]).astype(np.float32)
-	hull = cv2.convexHull(pts)
-	return DetectionResult(hull=hull.reshape(-1, 2), ids=best_ids.squeeze())
+	hull = cv2.convexHull(pts).reshape(-1, 2)
+	return DetectionResult(hull=hull, ids=best_ids.reshape(-1))
 
 
+# Scans for markers and returns the convex hull around all of them
+def _detect_aruco_hull(image: np.ndarray) -> np.ndarray | None:
+	detection = _detect_aruco_markers(image)
+	return detection.hull if detection else None
+
+
+# Expands the hull outward so GrabCut starts with a bit of padding
 def _expand_hull(hull: np.ndarray, expansion: float, image_size: Tuple[int, int]) -> np.ndarray:
-	"""Expand hull radially around its centroid by the given fractional amount."""
-
 	if expansion <= 0:
 		return hull
-
 	centroid = hull.mean(axis=0, keepdims=True)
 	expanded = centroid + (hull - centroid) * (1.0 + expansion)
 	w, h = image_size
@@ -154,55 +129,43 @@ def _expand_hull(hull: np.ndarray, expansion: float, image_size: Tuple[int, int]
 	return expanded
 
 
+# Builds the GrabCut seed mask from the hull and some morphology tricks
 def _build_grabcut_mask(image_shape: Tuple[int, int], hull: np.ndarray, expansion: float) -> np.ndarray:
-	"""Create an initialization mask for GrabCut using the detected hull."""
-
 	h, w = image_shape
 	mask = np.full((h, w), cv2.GC_PR_BGD, dtype=np.uint8)
-
 	expanded_hull = _expand_hull(hull, expansion, (w, h))
 	hull_int = np.clip(expanded_hull.astype(np.int32), [0, 0], [w - 1, h - 1])
 	fg_seed = np.zeros((h, w), dtype=np.uint8)
 	cv2.fillConvexPoly(fg_seed, hull_int, 1)
-
 	kernel = np.ones((7, 7), np.uint8)
 	sure_fg = cv2.erode(fg_seed, kernel, iterations=1)
 	probable_fg = cv2.dilate(fg_seed, kernel, iterations=2)
 	probable_bg = cv2.dilate(fg_seed, kernel, iterations=6)
-
 	mask[probable_bg == 0] = cv2.GC_BGD
 	mask[probable_fg == 1] = cv2.GC_PR_FGD
 	mask[sure_fg == 1] = cv2.GC_FGD
-
 	return mask
 
 
+# Runs GrabCut and returns a smoothed binary segmentation
 def _run_grabcut(image: np.ndarray, mask: np.ndarray, iterations: int) -> np.ndarray:
-	"""Execute GrabCut and return the binary segmentation mask."""
-
 	bgd_model = np.zeros((1, 65), dtype=np.float64)
 	fgd_model = np.zeros((1, 65), dtype=np.float64)
 	cv2.grabCut(image, mask, None, bgd_model, fgd_model, iterations, cv2.GC_INIT_WITH_MASK)
 	result = np.where((mask == cv2.GC_FGD) | (mask == cv2.GC_PR_FGD), 255, 0).astype(np.uint8)
-	result = cv2.medianBlur(result, 5)
-	return result
+	return cv2.medianBlur(result, 5)
 
 
+# Finds the largest contour so we have a single clean boundary
 def _extract_primary_contour(binary_mask: np.ndarray) -> np.ndarray | None:
-	"""Find the largest contour in a binary mask."""
-
 	contours, _ = cv2.findContours(binary_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-	if not contours:
-		return None
-	return max(contours, key=cv2.contourArea)
+	return max(contours, key=cv2.contourArea) if contours else None
 
 
+# Draws the extracted contour plus a translucent fill on top of the source
 def _draw_boundary(image: np.ndarray, contour: np.ndarray) -> np.ndarray:
-	"""Overlay the detected boundary on top of the source image."""
-
 	overlay = image.copy()
 	cv2.drawContours(overlay, [contour], -1, (0, 255, 0), thickness=3)
-
 	mask = np.zeros(image.shape[:2], dtype=np.uint8)
 	cv2.drawContours(mask, [contour], -1, color=255, thickness=cv2.FILLED)
 	colored_mask = cv2.merge([mask // 3, mask, np.zeros_like(mask)])
@@ -210,6 +173,7 @@ def _draw_boundary(image: np.ndarray, contour: np.ndarray) -> np.ndarray:
 	return cv2.addWeighted(blended, 0.7, overlay, 0.3, 0)
 
 
+# Iterates supported images in sorted order while skipping previous outputs
 def _iter_image_files(folder: Path, skip_suffix: str | None = None) -> Iterable[Path]:
 	for path in sorted(folder.iterdir()):
 		if not path.is_file() or path.suffix.lower() not in SUPPORTED_SUFFIXES:
@@ -219,10 +183,12 @@ def _iter_image_files(folder: Path, skip_suffix: str | None = None) -> Iterable[
 		yield path
 
 
+# Produces the output filename alongside the original
 def _output_path(input_path: Path, suffix: str) -> Path:
 	return input_path.with_name(f"{input_path.stem}{suffix}{input_path.suffix}")
 
 
+# Handles the full marker detection + GrabCut workflow for one image
 def _process_single_image(image_path: Path, suffix: str, iterations: int, expansion: float) -> bool:
 	LOGGER.info("Processing %s", image_path.name)
 	image = cv2.imread(str(image_path))
@@ -230,11 +196,11 @@ def _process_single_image(image_path: Path, suffix: str, iterations: int, expans
 		LOGGER.error("Failed to read %s", image_path)
 		return False
 
-	detection = _detect_aruco_markers(image)
-	if detection is None:
+	hull = _detect_aruco_hull(image)
+	if hull is None:
 		return False
 
-	mask = _build_grabcut_mask(image.shape[:2], detection.hull, expansion)
+	mask = _build_grabcut_mask(image.shape[:2], hull, expansion)
 	segmentation = _run_grabcut(image, mask, iterations)
 	contour = _extract_primary_contour(segmentation)
 	if contour is None:
@@ -251,6 +217,7 @@ def _process_single_image(image_path: Path, suffix: str, iterations: int, expans
 	return False
 
 
+# Drives the batch pass over the entire folder and reports success
 def _run(image_folder: Path, suffix: str, iterations: int, expansion: float) -> int:
 	if not image_folder.exists() or not image_folder.is_dir():
 		LOGGER.error("%s is not a valid folder", image_folder)
@@ -279,6 +246,7 @@ def _run(image_folder: Path, suffix: str, iterations: int, expansion: float) -> 
 	return 0
 
 
+# Entry point for CLI usage
 def main(argv: Sequence[str] | None = None) -> int:
 	parser = _build_argument_parser()
 	args = parser.parse_args(argv)

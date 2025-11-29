@@ -18,6 +18,60 @@ function notifyTabChangeListeners(prev, next) {
     });
 }
 
+let module3LightboxOverlay = null;
+let module3LightboxImage = null;
+
+function closeModule3Lightbox() {
+    if (!module3LightboxOverlay) return;
+    module3LightboxOverlay.classList.remove('module3-lightbox--open');
+    document.body.classList.remove('module3-lightbox-open');
+}
+
+function ensureModule3Lightbox() {
+    if (module3LightboxOverlay) return;
+    module3LightboxOverlay = document.createElement('div');
+    module3LightboxOverlay.className = 'module3-lightbox';
+    module3LightboxOverlay.setAttribute('role', 'dialog');
+    module3LightboxOverlay.setAttribute('aria-modal', 'true');
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'module3-lightbox__close';
+    closeBtn.setAttribute('aria-label', 'Close preview');
+    closeBtn.textContent = '✕';
+
+    module3LightboxImage = document.createElement('img');
+    module3LightboxImage.className = 'module3-lightbox__img';
+    module3LightboxImage.alt = '';
+
+    module3LightboxOverlay.appendChild(closeBtn);
+    module3LightboxOverlay.appendChild(module3LightboxImage);
+    document.body.appendChild(module3LightboxOverlay);
+
+    closeBtn.addEventListener('click', closeModule3Lightbox);
+    module3LightboxOverlay.addEventListener('click', (event) => {
+        if (event.target === module3LightboxOverlay) {
+            closeModule3Lightbox();
+        }
+    });
+
+    document.addEventListener('keydown', (event) => {
+        if (event.key === 'Escape' && module3LightboxOverlay.classList.contains('module3-lightbox--open')) {
+            closeModule3Lightbox();
+        }
+    });
+}
+
+function openModule3Lightbox(src, altText) {
+    if (!src) return;
+    ensureModule3Lightbox();
+    if (!module3LightboxOverlay || !module3LightboxImage) return;
+    module3LightboxImage.src = src;
+    module3LightboxImage.alt = altText || 'Preview image';
+    module3LightboxOverlay.classList.add('module3-lightbox--open');
+    document.body.classList.add('module3-lightbox-open');
+}
+
 function switchTab(tabId) {
     const previousTab = activeTabId;
     document.querySelectorAll('.tab-content').forEach(content => {
@@ -389,7 +443,9 @@ document.addEventListener('DOMContentLoaded', initModule4Flow);
 document.addEventListener('DOMContentLoaded', initModule1Flow);
 document.addEventListener('DOMContentLoaded', initModule56Flow);
 document.addEventListener('DOMContentLoaded', initModule56Part2Showcase);
+document.addEventListener('DOMContentLoaded', initModule7Part1Flow);
 document.addEventListener('DOMContentLoaded', initModule7Flow);
+document.addEventListener('DOMContentLoaded', initGlobalReset);
 
 function initModule56Flow() {
     const form = document.getElementById('module5-6-part1-form');
@@ -853,6 +909,841 @@ function initModule56Part2Showcase() {
     loadAssets();
 }
 
+function initModule7Part1Flow() {
+    const refCanvas = document.getElementById('module7-ref-canvas');
+    const leftCanvas = document.getElementById('module7-left-canvas');
+    const rightCanvas = document.getElementById('module7-right-canvas');
+    const measureCanvas = document.getElementById('module7-measure-canvas');
+    if (!refCanvas || !leftCanvas || !rightCanvas || !measureCanvas) return;
+
+    const ctxRef = refCanvas.getContext('2d');
+    const ctxLeft = leftCanvas.getContext('2d');
+    const ctxRight = rightCanvas.getContext('2d');
+    const ctxMeasure = measureCanvas.getContext('2d');
+    if (!ctxRef || !ctxLeft || !ctxRight || !ctxMeasure) return;
+
+    const elements = {
+        exampleBtn: document.getElementById('module7-example-btn'),
+        ref: {
+            canvas: refCanvas,
+            ctx: ctxRef,
+            wrapper: refCanvas.closest('.canvas-wrapper'),
+            empty: document.getElementById('module7-ref-empty'),
+            input: document.getElementById('module7-ref-input'),
+            clear: document.getElementById('module7-ref-clear'),
+            reset: document.getElementById('module7-ref-reset'),
+            realWidth: document.getElementById('module7-ref-real-width'),
+            distance: document.getElementById('module7-ref-distance'),
+            pixelLabel: document.getElementById('module7-ref-px'),
+            calcBtn: document.getElementById('module7-ref-calc'),
+            status: document.getElementById('module7-ref-status'),
+            card: document.getElementById('module7-calibration-card')
+        },
+        stereo: {
+            card: document.getElementById('module7-stereo-card'),
+            left: {
+                canvas: leftCanvas,
+                ctx: ctxLeft,
+                wrapper: leftCanvas.closest('.canvas-wrapper'),
+                empty: document.getElementById('module7-left-empty'),
+                input: document.getElementById('module7-left-input'),
+                clear: document.getElementById('module7-left-clear'),
+                label: document.getElementById('module7-left-point')
+            },
+            right: {
+                canvas: rightCanvas,
+                ctx: ctxRight,
+                wrapper: rightCanvas.closest('.canvas-wrapper'),
+                empty: document.getElementById('module7-right-empty'),
+                input: document.getElementById('module7-right-input'),
+                clear: document.getElementById('module7-right-clear'),
+                label: document.getElementById('module7-right-point')
+            },
+            baseline: document.getElementById('module7-baseline'),
+            disparityLabel: document.getElementById('module7-disparity'),
+            calcBtn: document.getElementById('module7-depth-btn'),
+            status: document.getElementById('module7-stereo-status')
+        },
+        measure: {
+            card: document.getElementById('module7-measure-card'),
+            canvas: measureCanvas,
+            ctx: ctxMeasure,
+            wrapper: measureCanvas.closest('.canvas-wrapper'),
+            empty: document.getElementById('module7-measure-empty'),
+            resetBtn: document.getElementById('module7-measure-reset'),
+            list: document.getElementById('module7-measurements-list'),
+            status: document.getElementById('module7-measure-status'),
+            summary: {
+                focal: document.getElementById('module7-summary-focal'),
+                depth: document.getElementById('module7-summary-depth'),
+                disparity: document.getElementById('module7-summary-disparity'),
+                baseline: document.getElementById('module7-summary-baseline')
+            }
+        }
+    };
+
+    if (!elements.ref.input || !elements.ref.calcBtn || !elements.stereo.calcBtn || !elements.measure.list) {
+        return;
+    }
+
+    const MAX_WIDTH = 960;
+    const MAX_HEIGHT = 720;
+    const numberFormat = new Intl.NumberFormat('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    const state = {
+        focalLength: null,
+        reference: {
+            image: null,
+            meta: null,
+            points: [],
+            pixelWidth: null,
+            realWidth: null,
+            distance: null
+        },
+        stereo: {
+            left: { image: null, meta: null, point: null },
+            right: { image: null, meta: null, point: null },
+            disparity: null,
+            baseline: null,
+            depth: null
+        },
+        measurement: {
+            pendingPoints: [],
+            segments: [],
+            isProcessing: false
+        }
+    };
+
+    function calculateDisplaySize(img) {
+        const widthRatio = MAX_WIDTH / img.width;
+        const heightRatio = MAX_HEIGHT / img.height;
+        const scale = Math.min(1, widthRatio, heightRatio);
+        return {
+            displayWidth: Math.round(img.width * scale),
+            displayHeight: Math.round(img.height * scale)
+        };
+    }
+
+    function formatNumber(value, digits = 2) {
+        if (value === null || value === undefined) return null;
+        const num = Number(value);
+        if (!Number.isFinite(num)) return null;
+        return num.toFixed(digits);
+    }
+
+    function setStatus(stage, message, variant = 'info') {
+        const target = stage === 'ref' ? elements.ref.status : stage === 'stereo' ? elements.stereo.status : elements.measure.status;
+        if (!target) return;
+        target.textContent = message;
+        target.dataset.variant = variant;
+    }
+
+    function updateSummary() {
+        if (elements.measure.summary.focal) {
+            elements.measure.summary.focal.textContent = state.focalLength ? numberFormat.format(state.focalLength) : '--';
+        }
+        if (elements.measure.summary.depth) {
+            elements.measure.summary.depth.textContent = state.stereo.depth ? numberFormat.format(state.stereo.depth) : '--';
+        }
+        if (elements.measure.summary.disparity) {
+            elements.measure.summary.disparity.textContent = state.stereo.disparity ? numberFormat.format(state.stereo.disparity) : '--';
+        }
+        if (elements.measure.summary.baseline) {
+            elements.measure.summary.baseline.textContent = state.stereo.baseline ? numberFormat.format(state.stereo.baseline) : '--';
+        }
+    }
+
+    function updateReferencePixelLabel() {
+        const value = state.reference.pixelWidth;
+        elements.ref.pixelLabel.textContent = value ? `${numberFormat.format(value)} px` : '--';
+    }
+
+    function updateStereoMetrics() {
+        if (elements.stereo.left.label) {
+            const pt = state.stereo.left.point;
+            elements.stereo.left.label.textContent = pt ? `${numberFormat.format(pt.image.x)} , ${numberFormat.format(pt.image.y)}` : '--';
+        }
+        if (elements.stereo.right.label) {
+            const pt = state.stereo.right.point;
+            elements.stereo.right.label.textContent = pt ? `${numberFormat.format(pt.image.x)} , ${numberFormat.format(pt.image.y)}` : '--';
+        }
+        if (elements.stereo.disparityLabel) {
+            elements.stereo.disparityLabel.textContent = state.stereo.disparity ? `${numberFormat.format(state.stereo.disparity)} px` : '--';
+        }
+        updateSummary();
+    }
+
+    function drawReferenceCanvas() {
+        const bucket = state.reference;
+        if (!bucket.image || !bucket.meta) return;
+        const { ctx, canvas } = elements.ref;
+        canvas.width = bucket.meta.displayWidth;
+        canvas.height = bucket.meta.displayHeight;
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(bucket.image, 0, 0, bucket.meta.displayWidth, bucket.meta.displayHeight);
+
+        bucket.points.forEach((point, idx) => {
+            ctx.fillStyle = '#ff3b81';
+            ctx.strokeStyle = '#0f1118';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(point.canvas.x, point.canvas.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+            ctx.fillStyle = '#111827';
+            ctx.font = '12px Inter, sans-serif';
+            ctx.fillText(idx === 0 ? 'A' : 'B', point.canvas.x + 8, point.canvas.y - 8);
+        });
+
+        if (bucket.points.length === 2) {
+            ctx.strokeStyle = '#31c48d';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(bucket.points[0].canvas.x, bucket.points[0].canvas.y);
+            ctx.lineTo(bucket.points[1].canvas.x, bucket.points[1].canvas.y);
+            ctx.stroke();
+        }
+    }
+
+    function drawStereoCanvas(side) {
+        const bucket = state.stereo[side];
+        const el = elements.stereo[side];
+        if (!bucket || !bucket.image || !bucket.meta || !el) return;
+        el.canvas.width = bucket.meta.displayWidth;
+        el.canvas.height = bucket.meta.displayHeight;
+        el.ctx.clearRect(0, 0, el.canvas.width, el.canvas.height);
+        el.ctx.drawImage(bucket.image, 0, 0, bucket.meta.displayWidth, bucket.meta.displayHeight);
+
+        if (bucket.point) {
+            el.ctx.fillStyle = '#f97316';
+            el.ctx.strokeStyle = '#111827';
+            el.ctx.lineWidth = 2;
+            el.ctx.beginPath();
+            el.ctx.arc(bucket.point.canvas.x, bucket.point.canvas.y, 7, 0, Math.PI * 2);
+            el.ctx.fill();
+            el.ctx.stroke();
+        }
+    }
+
+    function drawMeasurementCanvas() {
+        const meta = state.stereo.left.meta;
+        const img = state.stereo.left.image;
+        const { canvas, ctx, wrapper, empty } = elements.measure;
+        if (!img || !meta || !state.stereo.depth) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            wrapper.dataset.state = 'empty';
+            if (empty) empty.textContent = 'Calculate stereo depth to unlock the measurement canvas.';
+            return;
+        }
+
+        if (canvas.width !== meta.displayWidth || canvas.height !== meta.displayHeight) {
+            canvas.width = meta.displayWidth;
+            canvas.height = meta.displayHeight;
+        }
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(img, 0, 0, meta.displayWidth, meta.displayHeight);
+        wrapper.dataset.state = 'ready';
+        if (empty) empty.textContent = 'Click two points (A → B) to log a measurement.';
+
+        state.measurement.segments.forEach((segment, index) => {
+            ctx.strokeStyle = '#06b6d4';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(segment.points[0].x, segment.points[0].y);
+            ctx.lineTo(segment.points[1].x, segment.points[1].y);
+            ctx.stroke();
+
+            const midX = (segment.points[0].x + segment.points[1].x) / 2;
+            const midY = (segment.points[0].y + segment.points[1].y) / 2;
+            ctx.fillStyle = '#0f172a';
+            ctx.font = '12px Inter, sans-serif';
+            ctx.fillText(`#${index + 1} ${numberFormat.format(segment.realSize)} cm`, midX + 8, midY - 8);
+        });
+
+        state.measurement.pendingPoints.forEach((point, idx) => {
+            ctx.fillStyle = idx === 0 ? '#d946ef' : '#facc15';
+            ctx.strokeStyle = '#0f1118';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(point.canvas.x, point.canvas.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.stroke();
+        });
+
+        if (state.measurement.pendingPoints.length === 2) {
+            const [a, b] = state.measurement.pendingPoints;
+            ctx.setLineDash([6, 6]);
+            ctx.strokeStyle = '#fbbf24';
+            ctx.beginPath();
+            ctx.moveTo(a.canvas.x, a.canvas.y);
+            ctx.lineTo(b.canvas.x, b.canvas.y);
+            ctx.stroke();
+            ctx.setLineDash([]);
+        }
+    }
+
+    function resetReferencePoints() {
+        state.reference.points = [];
+        state.reference.pixelWidth = null;
+        elements.ref.reset.disabled = true;
+        updateReferencePixelLabel();
+        drawReferenceCanvas();
+        setStatus('ref', 'Click the LEFT and RIGHT edges of the reference object.', 'info');
+    }
+
+    function resetReferenceImage() {
+        state.reference.image = null;
+        state.reference.meta = null;
+        resetReferencePoints();
+        elements.ref.canvas.width = 0;
+        elements.ref.canvas.height = 0;
+        if (elements.ref.wrapper) elements.ref.wrapper.dataset.state = 'empty';
+        if (elements.ref.empty) elements.ref.empty.textContent = 'Upload the reference image to begin calibration.';
+        elements.ref.input.value = '';
+        elements.ref.clear.disabled = true;
+        state.reference.realWidth = null;
+        state.reference.distance = null;
+        elements.ref.realWidth.value = '';
+        elements.ref.distance.value = '';
+    }
+
+    function resetStereoSide(side, { clearInput = true } = {}) {
+        const bucket = state.stereo[side];
+        const el = elements.stereo[side];
+        bucket.image = null;
+        bucket.meta = null;
+        bucket.point = null;
+        if (clearInput) el.input.value = '';
+        el.label.textContent = '--';
+        el.canvas.width = 0;
+        el.canvas.height = 0;
+        if (el.wrapper) el.wrapper.dataset.state = 'empty';
+        if (el.empty) el.empty.textContent = side === 'left' ? 'Load the LEFT stereo frame, then click a target point.' : 'Load the RIGHT frame to continue.';
+    }
+
+    function resetStereoWorkflow() {
+        resetStereoSide('left');
+        resetStereoSide('right');
+        state.stereo.disparity = null;
+        state.stereo.baseline = null;
+        state.stereo.depth = null;
+        elements.stereo.baseline.value = '';
+        elements.stereo.calcBtn.disabled = true;
+        elements.stereo.baseline.disabled = true;
+        elements.stereo.left.input.disabled = true;
+        elements.stereo.right.input.disabled = true;
+        elements.stereo.left.clear.disabled = true;
+        elements.stereo.right.clear.disabled = true;
+        if (elements.stereo.card) {
+            elements.stereo.card.classList.add('locked');
+            elements.stereo.card.setAttribute('aria-disabled', 'true');
+        }
+        updateStereoMetrics();
+        lockMeasurementStep();
+        setStatus('stereo', 'Finish Step 1 to unlock the stereo depth tools.', 'info');
+    }
+
+    function lockMeasurementStep() {
+        state.measurement.pendingPoints = [];
+        state.measurement.segments = [];
+        state.measurement.isProcessing = false;
+        elements.measure.resetBtn.disabled = true;
+        if (elements.measure.card) {
+            elements.measure.card.classList.add('locked');
+            elements.measure.card.setAttribute('aria-disabled', 'true');
+        }
+        renderMeasurements();
+        drawMeasurementCanvas();
+        setStatus('measure', 'Calculate stereo depth to unlock the measurement canvas.', 'info');
+    }
+
+    function unlockStereoStep() {
+        if (elements.stereo.card) {
+            elements.stereo.card.classList.remove('locked');
+            elements.stereo.card.removeAttribute('aria-disabled');
+        }
+        elements.stereo.left.input.disabled = false;
+        elements.stereo.right.input.disabled = false;
+        elements.stereo.left.clear.disabled = false;
+        elements.stereo.right.clear.disabled = false;
+        elements.stereo.baseline.disabled = false;
+        setStatus('stereo', 'Load the stereo pair and select the same feature in both images.', 'info');
+    }
+
+    function unlockMeasurementStep() {
+        if (elements.measure.card) {
+            elements.measure.card.classList.remove('locked');
+            elements.measure.card.removeAttribute('aria-disabled');
+        }
+        drawMeasurementCanvas();
+        setStatus('measure', 'Click two points (A then B) to capture a measurement.', 'info');
+    }
+
+    function renderMeasurements() {
+        const list = elements.measure.list;
+        if (!list) return;
+        list.innerHTML = '';
+        if (!state.measurement.segments.length) {
+            const placeholder = document.createElement('li');
+            placeholder.className = 'placeholder';
+            placeholder.textContent = 'No measurements yet.';
+            list.appendChild(placeholder);
+            return;
+        }
+        state.measurement.segments.forEach((segment, index) => {
+            const li = document.createElement('li');
+            li.innerHTML = `Measurement #${index + 1}: ${numberFormat.format(segment.realSize)} cm <span class="meta">${numberFormat.format(segment.pixelDistance)} px</span>`;
+            list.appendChild(li);
+        });
+        elements.measure.resetBtn.disabled = false;
+    }
+
+    function updateCalibrationButtonState() {
+        const hasImage = Boolean(state.reference.image);
+        const hasPoints = typeof state.reference.pixelWidth === 'number';
+        const realWidth = parseFloat(elements.ref.realWidth.value);
+        const distance = parseFloat(elements.ref.distance.value);
+        const ready = hasImage && hasPoints && realWidth > 0 && distance > 0;
+        elements.ref.calcBtn.disabled = !ready;
+        return ready;
+    }
+
+    function updateStereoButtonState() {
+        const ready = Boolean(state.focalLength && state.stereo.left.point && state.stereo.right.point && state.stereo.disparity && state.stereo.disparity > 0);
+        const baselineVal = parseFloat(elements.stereo.baseline.value);
+        const baselineReady = ready && baselineVal > 0;
+        state.stereo.baseline = baselineVal > 0 ? baselineVal : null;
+        elements.stereo.calcBtn.disabled = !baselineReady;
+        updateSummary();
+        return baselineReady;
+    }
+
+    function handleReferenceCanvasClick(event) {
+        if (!state.reference.image || !state.reference.meta) return;
+        if (state.reference.points.length === 2) return;
+
+        const rect = elements.ref.canvas.getBoundingClientRect();
+        const scaleX = state.reference.meta.naturalWidth / rect.width;
+        const scaleY = state.reference.meta.naturalHeight / rect.height;
+        const displayScaleX = state.reference.meta.displayWidth / rect.width;
+        const displayScaleY = state.reference.meta.displayHeight / rect.height;
+        const clickPoint = {
+            canvas: {
+                x: (event.clientX - rect.left) * displayScaleX,
+                y: (event.clientY - rect.top) * displayScaleY
+            },
+            image: {
+                x: (event.clientX - rect.left) * scaleX,
+                y: (event.clientY - rect.top) * scaleY
+            }
+        };
+
+        state.reference.points.push(clickPoint);
+        if (state.reference.points.length === 2) {
+            const [a, b] = state.reference.points;
+            state.reference.pixelWidth = Math.hypot(b.image.x - a.image.x, b.image.y - a.image.y);
+            elements.ref.reset.disabled = false;
+            setStatus('ref', 'Enter the real width & distance, then store the focal length.', 'success');
+        } else {
+            setStatus('ref', 'Point A recorded. Click the opposite edge to complete the measurement.', 'info');
+        }
+
+        drawReferenceCanvas();
+        updateReferencePixelLabel();
+        updateCalibrationButtonState();
+    }
+
+    function handleStereoCanvasClick(side, event) {
+        const bucket = state.stereo[side];
+        const el = elements.stereo[side];
+        if (!bucket.image || !bucket.meta) return;
+
+        const rect = el.canvas.getBoundingClientRect();
+        const scaleX = bucket.meta.naturalWidth / rect.width;
+        const scaleY = bucket.meta.naturalHeight / rect.height;
+        const displayScaleX = bucket.meta.displayWidth / rect.width;
+        const displayScaleY = bucket.meta.displayHeight / rect.height;
+
+        bucket.point = {
+            canvas: {
+                x: (event.clientX - rect.left) * displayScaleX,
+                y: (event.clientY - rect.top) * displayScaleY
+            },
+            image: {
+                x: (event.clientX - rect.left) * scaleX,
+                y: (event.clientY - rect.top) * scaleY
+            }
+        };
+
+        drawStereoCanvas(side);
+        updateStereoMetrics();
+
+        if (state.stereo.left.point && state.stereo.right.point) {
+            state.stereo.disparity = Math.abs(state.stereo.left.point.image.x - state.stereo.right.point.image.x);
+            if (state.stereo.disparity === 0) {
+                setStatus('stereo', 'Disparity is zero. Choose distinct x positions in the left/right frames.', 'error');
+            } else {
+                setStatus('stereo', 'Baseline + disparity ready. Enter the baseline and calculate depth.', 'success');
+            }
+        }
+
+        updateStereoMetrics();
+        updateStereoButtonState();
+    }
+
+    function handleMeasurementCanvasClick(event) {
+        if (!state.stereo.depth || !state.stereo.left.image || !state.stereo.left.meta || state.measurement.isProcessing) return;
+        const rect = elements.measure.canvas.getBoundingClientRect();
+        const meta = state.stereo.left.meta;
+        const scaleX = meta.naturalWidth / rect.width;
+        const scaleY = meta.naturalHeight / rect.height;
+        const displayScaleX = meta.displayWidth / rect.width;
+        const displayScaleY = meta.displayHeight / rect.height;
+
+        const point = {
+            canvas: {
+                x: (event.clientX - rect.left) * displayScaleX,
+                y: (event.clientY - rect.top) * displayScaleY
+            },
+            image: {
+                x: (event.clientX - rect.left) * scaleX,
+                y: (event.clientY - rect.top) * scaleY
+            }
+        };
+
+        state.measurement.pendingPoints.push(point);
+        if (state.measurement.pendingPoints.length > 2) {
+            state.measurement.pendingPoints.shift();
+        }
+
+        drawMeasurementCanvas();
+
+        if (state.measurement.pendingPoints.length === 2) {
+            submitMeasurement();
+        } else {
+            setStatus('measure', 'Point A logged. Click point B to complete the measurement.', 'info');
+        }
+    }
+
+    async function submitMeasurement() {
+        if (state.measurement.pendingPoints.length !== 2 || state.measurement.isProcessing) return;
+        if (!state.focalLength || !state.stereo.depth) {
+            state.measurement.pendingPoints = [];
+            drawMeasurementCanvas();
+            setStatus('measure', 'Complete Steps 1 and 2 before measuring segments.', 'error');
+            return;
+        }
+        const [a, b] = state.measurement.pendingPoints;
+        const pixelDistance = Math.hypot(b.image.x - a.image.x, b.image.y - a.image.y);
+        if (pixelDistance <= 0) {
+            setStatus('measure', 'Select two different points to measure.', 'error');
+            return;
+        }
+
+        state.measurement.isProcessing = true;
+        setStatus('measure', 'Calculating measurement…', 'info');
+        try {
+            const response = await fetch('/api/a7/part1/measure', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    pixelDistance,
+                    focalLength: state.focalLength,
+                    depth: state.stereo.depth
+                })
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Measurement failed.');
+
+            state.measurement.segments.push({
+                points: [a.canvas, b.canvas],
+                realSize: data.realSizeCm,
+                pixelDistance
+            });
+            state.measurement.pendingPoints = [];
+            renderMeasurements();
+            drawMeasurementCanvas();
+            setStatus('measure', 'Measurement stored. Click again to measure another segment.', 'success');
+        } catch (err) {
+            setStatus('measure', err.message || 'Unable to calculate measurement.', 'error');
+        } finally {
+            state.measurement.isProcessing = false;
+        }
+    }
+
+    function loadReferenceImage(img) {
+        const size = calculateDisplaySize(img);
+        elements.ref.canvas.width = size.displayWidth;
+        elements.ref.canvas.height = size.displayHeight;
+        elements.ref.ctx.clearRect(0, 0, size.displayWidth, size.displayHeight);
+        elements.ref.ctx.drawImage(img, 0, 0, size.displayWidth, size.displayHeight);
+        state.reference.image = img;
+        state.reference.meta = {
+            displayWidth: size.displayWidth,
+            displayHeight: size.displayHeight,
+            naturalWidth: img.width,
+            naturalHeight: img.height
+        };
+        resetReferencePoints();
+        elements.ref.clear.disabled = false;
+        if (elements.ref.wrapper) elements.ref.wrapper.dataset.state = 'ready';
+        if (elements.ref.empty) elements.ref.empty.textContent = 'Click the LEFT and RIGHT edges of the known object.';
+        setStatus('ref', 'Image loaded. Select the two calibration points.', 'info');
+        updateCalibrationButtonState();
+    }
+
+    function loadStereoImage(side, img) {
+        const target = elements.stereo[side];
+        const size = calculateDisplaySize(img);
+        target.canvas.width = size.displayWidth;
+        target.canvas.height = size.displayHeight;
+        target.ctx.clearRect(0, 0, size.displayWidth, size.displayHeight);
+        target.ctx.drawImage(img, 0, 0, size.displayWidth, size.displayHeight);
+        state.stereo[side].image = img;
+        state.stereo[side].meta = {
+            displayWidth: size.displayWidth,
+            displayHeight: size.displayHeight,
+            naturalWidth: img.width,
+            naturalHeight: img.height
+        };
+        state.stereo[side].point = null;
+        target.label.textContent = '--';
+        if (target.wrapper) target.wrapper.dataset.state = 'ready';
+        if (target.empty) {
+            target.empty.textContent = side === 'left' ? 'Click a distinct feature (Point L).' : 'Click the matching feature inside the RIGHT image.';
+        }
+        drawStereoCanvas(side);
+        updateStereoMetrics();
+        updateStereoButtonState();
+        if (side === 'left' && state.stereo.depth) {
+            resetMeasurements();
+        }
+    }
+
+    function loadImageFromFile(kind, file) {
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = (event) => {
+            const img = new Image();
+            img.onload = () => {
+                if (kind === 'reference') loadReferenceImage(img);
+                else loadStereoImage(kind, img);
+            };
+            img.onerror = () => setStatus(kind === 'reference' ? 'ref' : 'stereo', 'Unable to load that file.', 'error');
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+
+    function loadImageFromDataUrl(kind, dataUrl) {
+        if (!dataUrl) return;
+        const img = new Image();
+        img.onload = () => {
+            if (kind === 'reference') loadReferenceImage(img);
+            else loadStereoImage(kind, img);
+        };
+        img.onerror = () => setStatus(kind === 'reference' ? 'ref' : 'stereo', 'Failed to load the sample image.', 'error');
+        img.src = dataUrl;
+    }
+
+    function addAutofillHighlight(input, value) {
+        if (!input || value === undefined || value === null) return;
+        input.value = Number.isFinite(value) ? value : value;
+        input.classList.add('autofilled', 'autofilled-pulse');
+        const removeClass = () => {
+            input.classList.remove('autofilled');
+            input.classList.remove('autofilled-pulse');
+            input.removeEventListener('input', removeClass);
+        };
+        input.addEventListener('input', removeClass);
+        setTimeout(() => input.classList.remove('autofilled-pulse'), 4000);
+    }
+
+    async function handleSampleLoad() {
+        if (!elements.exampleBtn) return;
+        elements.exampleBtn.disabled = true;
+        setStatus('ref', 'Loading example dataset…', 'info');
+        try {
+            const response = await fetch('/api/a7/part1/sample');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to load example dataset.');
+
+            if (data.reference?.image) {
+                loadImageFromDataUrl('reference', data.reference.image);
+            }
+            if (data.left?.image) {
+                loadImageFromDataUrl('left', data.left.image);
+            }
+            if (data.right?.image) {
+                loadImageFromDataUrl('right', data.right.image);
+            }
+
+            const measurements = data.measurements || {};
+            if (measurements.referenceWidthCm) {
+                addAutofillHighlight(elements.ref.realWidth, measurements.referenceWidthCm);
+            }
+            if (measurements.referenceDistanceCm) {
+                addAutofillHighlight(elements.ref.distance, measurements.referenceDistanceCm);
+            }
+            if (measurements.baselineCm) {
+                addAutofillHighlight(elements.stereo.baseline, measurements.baselineCm);
+                const wasDisabled = elements.stereo.baseline.disabled;
+                if (wasDisabled) elements.stereo.baseline.disabled = false;
+                elements.stereo.baseline.dispatchEvent(new Event('input', { bubbles: true }));
+                if (wasDisabled) elements.stereo.baseline.disabled = true;
+            }
+
+            setStatus('ref', 'Example assets ready. Mark the calibration points, then enter the provided cm values.', 'success');
+        } catch (err) {
+            setStatus('ref', err.message || 'Unable to load example assets.', 'error');
+        } finally {
+            elements.exampleBtn.disabled = false;
+        }
+    }
+
+    async function submitFocalLength() {
+        if (!updateCalibrationButtonState()) return;
+        elements.ref.calcBtn.disabled = true;
+        setStatus('ref', 'Calculating focal length…', 'info');
+        const payload = {
+            pixelWidth: state.reference.pixelWidth,
+            realWidth: parseFloat(elements.ref.realWidth.value),
+            distance: parseFloat(elements.ref.distance.value)
+        };
+        try {
+            const response = await fetch('/api/a7/part1/focal-length', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Unable to calculate focal length.');
+            state.focalLength = data.focalLength;
+            state.reference.realWidth = data.refRealWidth;
+            state.reference.distance = data.refDistance;
+            setStatus('ref', `Focal length stored: ${numberFormat.format(state.focalLength)} px`, 'success');
+            unlockStereoStep();
+            updateSummary();
+        } catch (err) {
+            setStatus('ref', err.message || 'Unable to calculate focal length.', 'error');
+        } finally {
+            updateCalibrationButtonState();
+        }
+    }
+
+    async function submitDepth() {
+        if (!updateStereoButtonState()) return;
+        elements.stereo.calcBtn.disabled = true;
+        setStatus('stereo', 'Calculating Z distance…', 'info');
+        const payload = {
+            focalLength: state.focalLength,
+            baseline: parseFloat(elements.stereo.baseline.value),
+            disparity: state.stereo.disparity
+        };
+        try {
+            const response = await fetch('/api/a7/part1/depth', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Depth calculation failed.');
+            state.stereo.depth = data.depthCm;
+            state.stereo.baseline = data.baselineCm;
+            setStatus('stereo', `Depth recovered: ${numberFormat.format(state.stereo.depth)} cm`, 'success');
+            updateSummary();
+            state.measurement.pendingPoints = [];
+            state.measurement.segments = [];
+            renderMeasurements();
+            unlockMeasurementStep();
+        } catch (err) {
+            setStatus('stereo', err.message || 'Unable to compute depth.', 'error');
+        } finally {
+            elements.stereo.calcBtn.disabled = !updateStereoButtonState();
+            drawMeasurementCanvas();
+        }
+    }
+
+    function resetMeasurements() {
+        state.measurement.pendingPoints = [];
+        state.measurement.segments = [];
+        state.measurement.isProcessing = false;
+        elements.measure.resetBtn.disabled = true;
+        renderMeasurements();
+        drawMeasurementCanvas();
+        setStatus('measure', 'Measurements cleared. Click in the image to capture new ones.', 'info');
+    }
+
+    function resetModule() {
+        resetReferenceImage();
+        resetStereoWorkflow();
+        lockMeasurementStep();
+        state.focalLength = null;
+        [elements.ref.realWidth, elements.ref.distance, elements.stereo.baseline].forEach((input) => {
+            if (!input) return;
+            input.classList.remove('autofilled');
+            input.classList.remove('autofilled-pulse');
+        });
+        updateCalibrationButtonState();
+        updateSummary();
+        setStatus('ref', 'Upload the reference image to begin calibration.', 'info');
+    }
+
+    elements.ref.input.addEventListener('change', (event) => {
+        const file = event.target.files?.[0];
+        loadImageFromFile('reference', file);
+    });
+    elements.ref.clear.addEventListener('click', resetModule);
+    elements.ref.reset.addEventListener('click', resetReferencePoints);
+    elements.ref.realWidth.addEventListener('input', updateCalibrationButtonState);
+    elements.ref.distance.addEventListener('input', updateCalibrationButtonState);
+    elements.ref.calcBtn.addEventListener('click', submitFocalLength);
+    elements.ref.canvas.addEventListener('click', handleReferenceCanvasClick);
+
+    elements.stereo.left.input.addEventListener('change', (event) => {
+        const file = event.target.files?.[0];
+        loadImageFromFile('left', file);
+    });
+    elements.stereo.right.input.addEventListener('change', (event) => {
+        const file = event.target.files?.[0];
+        loadImageFromFile('right', file);
+    });
+    function handleStereoClear(side) {
+        resetStereoSide(side);
+        state.stereo.disparity = null;
+        state.stereo.depth = null;
+        state.stereo.baseline = null;
+        elements.stereo.baseline.value = '';
+        updateStereoMetrics();
+        updateStereoButtonState();
+        lockMeasurementStep();
+        drawMeasurementCanvas();
+        setStatus('stereo', 'Stereo inputs reset. Reload the pair and reselect the matching points.', 'info');
+    }
+
+    elements.stereo.left.clear.addEventListener('click', () => handleStereoClear('left'));
+    elements.stereo.right.clear.addEventListener('click', () => handleStereoClear('right'));
+    elements.stereo.left.canvas.addEventListener('click', (event) => handleStereoCanvasClick('left', event));
+    elements.stereo.right.canvas.addEventListener('click', (event) => handleStereoCanvasClick('right', event));
+    elements.stereo.baseline.addEventListener('input', () => {
+        const value = parseFloat(elements.stereo.baseline.value);
+        state.stereo.baseline = Number.isFinite(value) && value > 0 ? value : null;
+        updateSummary();
+        updateStereoButtonState();
+    });
+    elements.stereo.calcBtn.addEventListener('click', submitDepth);
+
+    elements.measure.canvas.addEventListener('click', handleMeasurementCanvasClick);
+    elements.measure.resetBtn.addEventListener('click', resetMeasurements);
+
+    if (elements.exampleBtn) {
+        elements.exampleBtn.addEventListener('click', handleSampleLoad);
+    }
+
+    resetModule();
+    window.__module7Part1Reset = resetModule;
+}
+
 function initModule7Flow() {
     const form = document.getElementById('module7-part2-form');
     if (!form) return;
@@ -1272,6 +2163,10 @@ function initGlobalReset() {
             try { m7Form.__module7Reset(); } catch (err) { /* ignore */ }
         }
 
+        if (typeof window.__module7Part1Reset === 'function') {
+            try { window.__module7Part1Reset(); } catch (err) { /* ignore */ }
+        }
+
         // Clear any run outputs in simple modules (4, 5-6, 7) and additional UI elements
         ['a4', 'a56', 'a7'].forEach((id) => {
             const input = document.getElementById(`input-${id}`);
@@ -1321,8 +2216,6 @@ function initGlobalReset() {
         try { document.getElementById('ref-status').textContent = 'All modules reset.'; document.getElementById('test-status').textContent = 'All modules reset.'; } catch(e) { }
     });
 }
-
-document.addEventListener('DOMContentLoaded', initGlobalReset);
 
 function initModule2Flow() {
     const form = document.getElementById('module2-part2-form');
@@ -2020,7 +2913,8 @@ function initModule3Flow() {
             readyStatus: 'Ready to run the marker-guided cutout.',
             runningStatus: 'Detecting ArUco markers and running GrabCut…',
             outputLabel: 'Marker-guided cutout',
-            successStatus: 'Marker-guided cutouts generated.'
+            successStatus: 'Marker-guided cutouts generated.',
+            enableLightbox: true
         }
     ];
 
@@ -2037,8 +2931,6 @@ function initModule3Part5Showcase() {
     const depsEl = document.getElementById('module3-part5-deps');
     let isLoading = false;
     let hasLoaded = false;
-    let lightboxOverlay = null;
-    let lightboxImage = null;
 
     const initCliCopyButtons = () => {
         const snippets = document.querySelectorAll('.module3-cli-snippet');
@@ -2084,55 +2976,6 @@ function initModule3Part5Showcase() {
                 showToast();
             });
         });
-    };
-
-    const ensureLightbox = () => {
-        if (lightboxOverlay) return;
-        lightboxOverlay = document.createElement('div');
-        lightboxOverlay.className = 'module3-lightbox';
-        lightboxOverlay.setAttribute('role', 'dialog');
-        lightboxOverlay.setAttribute('aria-modal', 'true');
-
-        const closeBtn = document.createElement('button');
-        closeBtn.type = 'button';
-        closeBtn.className = 'module3-lightbox__close';
-        closeBtn.setAttribute('aria-label', 'Close preview');
-        closeBtn.textContent = '✕';
-
-        lightboxImage = document.createElement('img');
-        lightboxImage.className = 'module3-lightbox__img';
-        lightboxImage.alt = '';
-
-        lightboxOverlay.appendChild(closeBtn);
-        lightboxOverlay.appendChild(lightboxImage);
-        document.body.appendChild(lightboxOverlay);
-
-        const closeLightbox = () => {
-            lightboxOverlay?.classList.remove('module3-lightbox--open');
-            document.body.classList.remove('module3-lightbox-open');
-        };
-
-        closeBtn.addEventListener('click', closeLightbox);
-        lightboxOverlay.addEventListener('click', (event) => {
-            if (event.target === lightboxOverlay) {
-                closeLightbox();
-            }
-        });
-        document.addEventListener('keydown', (event) => {
-            if (event.key === 'Escape' && lightboxOverlay?.classList.contains('module3-lightbox--open')) {
-                closeLightbox();
-            }
-        });
-        lightboxOverlay.closeLightbox = closeLightbox; // custom property for reuse
-    };
-
-    const openLightbox = (src, altText) => {
-        ensureLightbox();
-        if (!lightboxOverlay || !lightboxImage) return;
-        lightboxImage.src = src;
-        lightboxImage.alt = altText || 'Preview image';
-        lightboxOverlay.classList.add('module3-lightbox--open');
-        document.body.classList.add('module3-lightbox-open');
     };
 
     const setSummary = (message) => {
@@ -2253,7 +3096,7 @@ function initModule3Part5Showcase() {
     gallery.addEventListener('click', (event) => {
         const img = event.target.closest('img');
         if (!img || !gallery.contains(img)) return;
-        openLightbox(img.src, img.alt);
+        openModule3Lightbox(img.src, img.alt);
     });
 
     gallery.addEventListener('keydown', (event) => {
@@ -2261,7 +3104,7 @@ function initModule3Part5Showcase() {
         const img = event.target;
         if (!img || img.tagName !== 'IMG' || !gallery.contains(img)) return;
         event.preventDefault();
-        openLightbox(img.src, img.alt);
+        openModule3Lightbox(img.src, img.alt);
     });
 
     const activeTab = document.getElementById('a3');
@@ -2276,7 +3119,7 @@ function initModule3Part5Showcase() {
     });
 
     initCliCopyButtons();
-    ensureLightbox();
+    ensureModule3Lightbox();
 }
 
 function setupModule3Part(config) {
@@ -2305,6 +3148,10 @@ function setupModule3Part(config) {
         sampleFiles: [],
         hasResults: false
     };
+
+    if (config.enableLightbox) {
+        gallery.classList.add('module3-gallery--interactive');
+    }
 
     const setStatus = (message, variant = 'info') => {
         statusLine.textContent = message;
@@ -2377,11 +3224,17 @@ function setupModule3Part(config) {
     const createFigure = (src, label, filename) => {
         const figure = document.createElement('figure');
         figure.className = 'module3-result-figure';
+        if (config.enableLightbox) {
+            figure.classList.add('module3-result-figure--interactive');
+        }
         if (src) {
             const img = document.createElement('img');
             img.src = src;
             img.alt = label ? `${label} (${filename || 'image'})` : (filename || 'image');
             img.loading = 'lazy';
+            if (config.enableLightbox) {
+                img.tabIndex = 0;
+            }
             figure.appendChild(img);
         } else {
             const placeholder = document.createElement('div');
@@ -2428,6 +3281,25 @@ function setupModule3Part(config) {
         refreshButtons();
         return items.length;
     };
+
+    if (config.enableLightbox) {
+        const handleLightboxClick = (event) => {
+            const img = event.target.closest('img');
+            if (!img || !gallery.contains(img)) return;
+            openModule3Lightbox(img.src, img.alt);
+        };
+
+        const handleLightboxKeydown = (event) => {
+            if (event.key !== 'Enter' && event.key !== ' ') return;
+            const img = event.target;
+            if (!img || img.tagName !== 'IMG' || !gallery.contains(img)) return;
+            event.preventDefault();
+            openModule3Lightbox(img.src, img.alt);
+        };
+
+        gallery.addEventListener('click', handleLightboxClick);
+        gallery.addEventListener('keydown', handleLightboxKeydown);
+    }
 
     const performReset = ({ keepStatus = false } = {}) => {
         form.reset();

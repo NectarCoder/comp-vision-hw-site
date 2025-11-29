@@ -7,3 +7,8 @@ __pycache__/
 venv/
 .venv/
 /.venv/
+
+# Other
+
+# Under hwsources/resources/m3/part2
+*_detect.*

@@ -776,6 +776,225 @@ button.run-btn:hover { background-color: var(--primary-hover); }
     gap: 1rem;
 }
 
+/* Module 3 */
+.module3-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+}
+
+.module3-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 18px;
+    padding: 1.5rem;
+    box-shadow: 0 18px 32px rgba(15,23,42,0.08);
+}
+
+.module3-card__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.module3-card__header h3 {
+    margin: 0;
+    font-size: 1.15rem;
+}
+
+.module3-card__header p {
+    margin: 0.3rem 0 0;
+    color: var(--muted);
+}
+
+.module3-card__body {
+    margin-top: 1rem;
+}
+
+.module3-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 320px) minmax(0, 1fr);
+    gap: 1.5rem;
+    align-items: flex-start;
+}
+
+@media (max-width: 960px) {
+    .module3-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+.module3-file-picker {
+    width: 100%;
+    justify-content: center;
+}
+
+.module3-actions {
+    display: flex;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.module3-selection {
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    padding: 0.85rem;
+    background: var(--surface-hover);
+    min-height: 70px;
+    font-size: 0.9rem;
+    color: var(--muted);
+}
+
+.module3-selection[data-empty="false"] {
+    border-style: solid;
+    color: var(--text);
+}
+
+.module3-selection__note {
+    margin: 0 0 0.4rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.module3-file-list {
+    margin: 0;
+    padding-left: 1.25rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    color: var(--text);
+    font-size: 0.9rem;
+}
+
+.module3-sample-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    margin-top: 0.5rem;
+    font-size: 0.85rem;
+    color: var(--muted);
+}
+
+.module3-sample-note {
+    color: var(--muted);
+}
+
+.module3-results {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+}
+
+.module3-summary {
+    border: 1px dashed var(--border);
+    border-radius: 12px;
+    padding: 0.9rem;
+    background: var(--surface-hover);
+    font-size: 0.95rem;
+    color: var(--muted);
+}
+
+.module3-gallery {
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 1rem;
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    min-height: 140px;
+}
+
+.module3-gallery[data-empty="true"] {
+    border-style: dashed;
+}
+
+.module3-gallery__placeholder {
+    margin: 0;
+    color: var(--muted);
+}
+
+.module3-result-card {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem;
+    background: var(--surface-hover);
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.module3-result-card__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+}
+
+.module3-result-card__header strong {
+    font-size: 1rem;
+    color: var(--text);
+}
+
+.module3-result-images {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 0.75rem;
+}
+
+.module3-result-figure {
+    margin: 0;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+}
+
+.module3-result-figure img {
+    width: 100%;
+    border-radius: 8px;
+    object-fit: contain;
+    background: var(--surface-hover);
+}
+
+.module3-result-figure figcaption {
+    font-size: 0.85rem;
+    color: var(--muted);
+    text-align: center;
+}
+
+.module3-result-placeholder {
+    min-height: 120px;
+    border-radius: 8px;
+    background: var(--surface-hover);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--muted);
+    font-size: 0.85rem;
+}
+
+.module3-card--stub {
+    border-style: dashed;
+    opacity: 0.95;
+}
+
+.module3-card--stub .module3-card__body {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+}
+
+.module3-stub-note {
+    margin: 0;
+    color: var(--muted);
+}
+
 /* Module 7 */
 .module7-card {
     background: var(--surface);

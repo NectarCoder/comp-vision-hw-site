@@ -17,6 +17,7 @@ import hwsources.module2_part1 as module2_part1
 import hwsources.module5_6_part1 as module5_6
 from hwsources.module2_part2 import process_image as module2_process_image
 import hwsources.module2_part3 as module2_part3
+import hwsources.module3_part1 as module3_part1
 import hwsources.module4_part1 as module4_part1
 import hwsources.module4_part2 as module4_part2
 import hwsources.module7_part2 as module7_part2
@@ -35,6 +36,9 @@ MODULE2_PART3_TEMPLATE_LIMIT = 25
 INSTRUCTIONS_DIR = PROJECT_ROOT / 'hwinstructions'
 MODULE2_PART2_SAMPLE = MODULE2_PART1_DIR / 'tree.jpg'
 MODULE1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm1'
+MODULE3_SAMPLE_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm3'
+MODULE3_MIN_IMAGES = 10
+MODULE3_PREVIEW_MAX_DIM = 1400
 MODULE56_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm5_6'
 MODULE56_SAMPLE = MODULE56_DIR / 'aruco-marker.mp4'
 MODULE56_PART2_VIDEO = MODULE56_DIR / 'iphone-moving.mp4'
@@ -125,6 +129,121 @@ def _get_request_payload():
     return request.form if request.form else (request.get_json(silent=True) or {})
 
 
+def _truthy_flag(value) -> bool:
+    """Return True for common truthy strings/values."""
+    if value is None:
+        return False
+    if isinstance(value, bool):
+        return value
+    value_str = str(value).strip().lower()
+    return value_str in {'1', 'true', 'yes', 'sample', 'example', 'on'}
+
+
+def _get_module3_files_from_request():
+    files = request.files.getlist('images')
+    if not files:
+        files = request.files.getlist('images[]')
+    return files
+
+
+def _list_module3_sample_paths():
+    if not MODULE3_SAMPLE_DIR.exists():
+        raise FileNotFoundError('Module 3 example dataset is missing.')
+
+    sample_paths = [
+        path for path in MODULE3_SAMPLE_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in ALLOWED_IMAGE_EXTENSIONS
+    ]
+
+    if len(sample_paths) < MODULE3_MIN_IMAGES:
+        raise ValueError(f"Example dataset must contain at least {MODULE3_MIN_IMAGES} images.")
+
+    sample_paths.sort(key=lambda path: path.name.lower())
+    return sample_paths
+
+
+def _load_module3_sample_images():
+    uploads = []
+    for path in _list_module3_sample_paths():
+        image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+        if image is None:
+            raise RuntimeError(f'Failed to read example image {path.name}.')
+        uploads.append({'filename': path.name, 'image': image})
+    return uploads
+
+
+def _load_module3_uploads(file_storages):
+    uploads = []
+    for idx, storage in enumerate(file_storages, start=1):
+        if not storage or not storage.filename:
+            continue
+
+        filename = secure_filename(storage.filename) or f'image_{idx:02d}.png'
+        suffix = Path(filename).suffix.lower()
+        if suffix not in ALLOWED_IMAGE_EXTENSIONS:
+            raise ValueError(f'Unsupported image format for {filename}.')
+
+        data = storage.read()
+        if not data:
+            raise ValueError(f'Uploaded file {filename} is empty.')
+
+        array = np.frombuffer(data, dtype=np.uint8)
+        image = cv2.imdecode(array, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError(f'Could not decode {filename}. Please upload a valid image file.')
+
+        uploads.append({'filename': filename, 'image': image})
+
+    if len(uploads) < MODULE3_MIN_IMAGES:
+        raise ValueError(f"Please upload at least {MODULE3_MIN_IMAGES} images or click 'Use example data'.")
+
+    return uploads
+
+
+def _collect_module3_inputs():
+    payload = _get_request_payload()
+    use_sample = False
+
+    if payload:
+        for key in ('sample', 'useSample', 'use_sample', 'dataset'):
+            if key in payload and _truthy_flag(payload.get(key)):
+                use_sample = True
+                break
+
+    if use_sample:
+        return _load_module3_sample_images(), 'sample'
+
+    files = _get_module3_files_from_request()
+    if not files:
+        raise ValueError(f"Please upload at least {MODULE3_MIN_IMAGES} images or click 'Use example data'.")
+
+    return _load_module3_uploads(files), 'upload'
+
+
+def _run_module3_processor(uploads, processor, part_label):
+    results = []
+    for entry in uploads:
+        filename = entry['filename']
+        try:
+            processed = processor(entry['image'])
+        except Exception as exc:
+            raise RuntimeError(f"Module 3 {part_label}: failed to process {filename}: {exc}") from exc
+
+        if processed is None or getattr(processed, 'size', 0) == 0:
+            raise RuntimeError(f"Module 3 {part_label}: processing returned an empty result for {filename}.")
+
+        input_preview = _resize_for_preview(entry['image'], MODULE3_PREVIEW_MAX_DIM)
+        output_preview = _resize_for_preview(processed, MODULE3_PREVIEW_MAX_DIM)
+
+        results.append({
+            'filename': filename,
+            'inputImage': _image_array_to_data_url(input_preview, ext='.jpg'),
+            'outputImage': _image_array_to_data_url(output_preview, ext='.jpg'),
+        })
+
+    return results
+
+
 def _prepare_video_for_web(path: Path) -> Path:
     """If ffmpeg is available, transcode the video to H.264 + faststart for browser playback."""
     ffmpeg_bin = shutil.which('ffmpeg')
@@ -191,6 +310,23 @@ def _image_array_to_data_url(image, ext: str = '.png') -> str:
 
     encoded = base64.b64encode(buffer.tobytes()).decode('ascii')
     return f"data:{mime};base64,{encoded}"
+
+
+def _resize_for_preview(image, max_dim: int):
+    """Return a resized copy of `image` so its largest dimension <= max_dim."""
+    if image is None or getattr(image, 'size', 0) == 0:
+        return image
+
+    height, width = image.shape[:2]
+    largest = max(height, width)
+    if max_dim <= 0 or largest <= max_dim:
+        return image
+
+    scale = max_dim / float(largest)
+    new_width = max(1, int(round(width * scale)))
+    new_height = max(1, int(round(height * scale)))
+    # INTER_AREA handles down-sampling well.
+    return cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
 
 def _sort_key_natural(name: str):
@@ -1222,13 +1358,97 @@ def handle_a2_part3_run():
 
     return jsonify(results)
 
+@app.route('/api/a3/samples', methods=['GET'])
+def get_a3_samples():
+    try:
+        sample_paths = _list_module3_sample_paths()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    return jsonify({
+        'count': len(sample_paths),
+        'filenames': [path.name for path in sample_paths],
+    })
+
+
+@app.route('/api/a3/part1', methods=['POST'])
+def handle_a3_part1():
+    try:
+        uploads, source = _collect_module3_inputs()
+        results = _run_module3_processor(uploads, module3_part1.process_gradients_log, 'Part 1')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run Module 3 Part 1: {exc}'}), 500
+
+    source_label = 'example dataset' if source == 'sample' else 'uploaded set'
+    count = len(results)
+    return jsonify({
+        'count': count,
+        'source': source,
+        'results': results,
+        'message': f"Generated gradient magnitude, angle, and Laplacian-of-Gaussian grids for {count} images using the {source_label}."
+    })
+
+
+@app.route('/api/a3/part2', methods=['POST'])
+def handle_a3_part2():
+    try:
+        uploads, source = _collect_module3_inputs()
+        results = _run_module3_processor(uploads, module3_part1.detect_features, 'Part 2')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run Module 3 Part 2: {exc}'}), 500
+
+    source_label = 'example dataset' if source == 'sample' else 'uploaded set'
+    return jsonify({
+        'count': len(results),
+        'source': source,
+        'results': results,
+        'message': f"Detected edge (green) and corner (red) keypoints across {len(results)} images using the {source_label}."
+    })
+
+
+@app.route('/api/a3/part3', methods=['POST'])
+def handle_a3_part3():
+    try:
+        uploads, source = _collect_module3_inputs()
+        results = _run_module3_processor(uploads, module3_part1.find_exact_boundary, 'Part 3')
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run Module 3 Part 3: {exc}'}), 500
+
+    source_label = 'example dataset' if source == 'sample' else 'uploaded set'
+    return jsonify({
+        'count': len(results),
+        'source': source,
+        'results': results,
+        'message': f"Outlined the dominant object boundaries for {len(results)} images using the {source_label}."
+    })
+
+
 @app.route('/api/a3', methods=['POST'])
 def handle_a3():
-    data = request.json
+    data = request.json or {}
     user_input = data.get('input', '')
-    
-    # TODO: Connect Module 3 code
-    response = f"[Stub] Module 3 received data."
+
+    response = f"Module 3 UI has dedicated Part 1-3 endpoints. Payload echo: {user_input[:64]}"
     return jsonify({'result': response})
 
 @app.route('/api/a4', methods=['POST'])

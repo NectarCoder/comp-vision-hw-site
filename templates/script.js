@@ -347,6 +347,7 @@ async function runModule(id) {
 document.addEventListener('DOMContentLoaded', initModule2Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part1Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
+document.addEventListener('DOMContentLoaded', initModule3Flow);
 document.addEventListener('DOMContentLoaded', initModule4Flow);
 
 (function () {
@@ -1258,13 +1259,20 @@ function initGlobalReset() {
             }
         });
 
+        ['module3-part1-form', 'module3-part2-form', 'module3-part3-form'].forEach((formId) => {
+            const formEl = document.getElementById(formId);
+            if (formEl && typeof formEl.__module3Reset === 'function') {
+                try { formEl.__module3Reset(); } catch (err) { /* ignore */ }
+            }
+        });
+
         const m7Form = document.getElementById('module7-part2-form');
         if (m7Form && typeof m7Form.__module7Reset === 'function') {
             try { m7Form.__module7Reset(); } catch (err) { /* ignore */ }
         }
 
-        // Clear any run outputs in simple modules (3, 4, 5-6, 7) and additional UI elements
-        ['a3', 'a4', 'a56', 'a7'].forEach((id) => {
+        // Clear any run outputs in simple modules (4, 5-6, 7) and additional UI elements
+        ['a4', 'a56', 'a7'].forEach((id) => {
             const input = document.getElementById(`input-${id}`);
             const output = document.getElementById(`output-${id}`);
             if (input && 'value' in input) input.value = '';
@@ -1938,6 +1946,318 @@ function initModule2Part3Flow() {
     });
 
     loadReferences();
+}
+
+const MODULE3_MIN_IMAGES = 10;
+
+function initModule3Flow() {
+    const configs = [
+        {
+            key: 'part1',
+            formId: 'module3-part1-form',
+            inputId: 'module3-part1-input',
+            selectionId: 'module3-part1-selection',
+            sampleBtnId: 'module3-part1-sample',
+            runBtnId: 'module3-part1-run',
+            resetBtnId: 'module3-part1-reset',
+            statusId: 'module3-part1-status',
+            galleryId: 'module3-part1-gallery',
+            summaryId: 'module3-part1-summary',
+            endpoint: '/api/a3/part1',
+            readyStatus: 'Ready to run gradient & LoG analysis.',
+            runningStatus: 'Processing gradients and Laplacian responses…',
+            outputLabel: 'Gradient / LoG canvas',
+            successStatus: 'Gradient grids generated.'
+        },
+        {
+            key: 'part2',
+            formId: 'module3-part2-form',
+            inputId: 'module3-part2-input',
+            selectionId: 'module3-part2-selection',
+            sampleBtnId: 'module3-part2-sample',
+            runBtnId: 'module3-part2-run',
+            resetBtnId: 'module3-part2-reset',
+            statusId: 'module3-part2-status',
+            galleryId: 'module3-part2-gallery',
+            summaryId: 'module3-part2-summary',
+            endpoint: '/api/a3/part2',
+            readyStatus: 'Ready to detect edges and corners.',
+            runningStatus: 'Running edge & corner detector…',
+            outputLabel: 'Edge & corner overlay',
+            successStatus: 'Edge/corner map created.'
+        },
+        {
+            key: 'part3',
+            formId: 'module3-part3-form',
+            inputId: 'module3-part3-input',
+            selectionId: 'module3-part3-selection',
+            sampleBtnId: 'module3-part3-sample',
+            runBtnId: 'module3-part3-run',
+            resetBtnId: 'module3-part3-reset',
+            statusId: 'module3-part3-status',
+            galleryId: 'module3-part3-gallery',
+            summaryId: 'module3-part3-summary',
+            endpoint: '/api/a3/part3',
+            readyStatus: 'Ready to extract object boundaries.',
+            runningStatus: 'Running contour extraction…',
+            outputLabel: 'Boundary overlay',
+            successStatus: 'Boundary overlay generated.'
+        }
+    ];
+
+    configs.forEach((cfg) => setupModule3Part(cfg));
+}
+
+function setupModule3Part(config) {
+    const form = document.getElementById(config.formId);
+    if (!form) return;
+
+    const fileInput = document.getElementById(config.inputId);
+    const sampleBtn = document.getElementById(config.sampleBtnId);
+    const runBtn = document.getElementById(config.runBtnId);
+    const resetBtn = document.getElementById(config.resetBtnId);
+    const statusLine = document.getElementById(config.statusId);
+    const selectionEl = document.getElementById(config.selectionId);
+    const gallery = document.getElementById(config.galleryId);
+    const summaryEl = document.getElementById(config.summaryId);
+
+    if (!fileInput || !runBtn || !resetBtn || !statusLine || !selectionEl || !gallery || !summaryEl) {
+        return;
+    }
+
+    const defaultStatus = statusLine.textContent || 'Upload ≥10 images or use the example dataset to begin.';
+    const defaultSummary = summaryEl.textContent || '';
+    const defaultSelectionHtml = selectionEl.innerHTML;
+    const defaultGalleryHtml = gallery.innerHTML;
+    const state = {
+        useSample: false,
+        sampleFiles: [],
+        hasResults: false
+    };
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const currentCount = () => (state.useSample ? state.sampleFiles.length : (fileInput.files ? fileInput.files.length : 0));
+
+    const refreshButtons = () => {
+        const count = currentCount();
+        runBtn.disabled = count < MODULE3_MIN_IMAGES;
+        resetBtn.disabled = !(count || state.hasResults);
+    };
+
+    const renderSelectionList = (names, note) => {
+        selectionEl.dataset.empty = 'false';
+        selectionEl.innerHTML = '';
+        if (note) {
+            const noteEl = document.createElement('p');
+            noteEl.className = 'module3-selection__note';
+            noteEl.textContent = note;
+            selectionEl.appendChild(noteEl);
+        }
+        const list = document.createElement('ol');
+        list.className = 'module3-file-list';
+        names.forEach((name) => {
+            const item = document.createElement('li');
+            item.textContent = name;
+            list.appendChild(item);
+        });
+        selectionEl.appendChild(list);
+    };
+
+    const resetSelection = () => {
+        selectionEl.dataset.empty = 'true';
+        selectionEl.innerHTML = defaultSelectionHtml;
+    };
+
+    const clearSampleMode = () => {
+        if (!state.useSample) return;
+        state.useSample = false;
+        state.sampleFiles = [];
+    };
+
+    const updateSelection = () => {
+        if (state.useSample && state.sampleFiles.length) {
+            renderSelectionList(state.sampleFiles, `Example dataset (${state.sampleFiles.length} images)`);
+            refreshButtons();
+            return;
+        }
+
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) {
+            resetSelection();
+            refreshButtons();
+            return;
+        }
+
+        renderSelectionList(files.map((file) => file.name));
+        refreshButtons();
+    };
+
+    const clearGallery = () => {
+        gallery.dataset.empty = 'true';
+        gallery.innerHTML = defaultGalleryHtml;
+        state.hasResults = false;
+        summaryEl.textContent = defaultSummary;
+    };
+
+    const createFigure = (src, label, filename) => {
+        const figure = document.createElement('figure');
+        figure.className = 'module3-result-figure';
+        if (src) {
+            const img = document.createElement('img');
+            img.src = src;
+            img.alt = label ? `${label} (${filename || 'image'})` : (filename || 'image');
+            img.loading = 'lazy';
+            figure.appendChild(img);
+        } else {
+            const placeholder = document.createElement('div');
+            placeholder.className = 'module3-result-placeholder';
+            placeholder.textContent = 'No preview available';
+            figure.appendChild(placeholder);
+        }
+        const caption = document.createElement('figcaption');
+        caption.textContent = label;
+        figure.appendChild(caption);
+        return figure;
+    };
+
+    const renderGallery = (results) => {
+        const items = Array.isArray(results) ? results : [];
+        if (!items.length) {
+            clearGallery();
+            return 0;
+        }
+
+        gallery.dataset.empty = 'false';
+        gallery.innerHTML = '';
+        items.forEach((result, idx) => {
+            const card = document.createElement('article');
+            card.className = 'module3-result-card';
+
+            const header = document.createElement('div');
+            header.className = 'module3-result-card__header';
+            const title = document.createElement('strong');
+            title.textContent = `${idx + 1}. ${result.filename || 'Image'}`;
+            header.appendChild(title);
+            card.appendChild(header);
+
+            const figures = document.createElement('div');
+            figures.className = 'module3-result-images';
+            figures.appendChild(createFigure(result.inputImage, 'Original frame', result.filename));
+            figures.appendChild(createFigure(result.outputImage, config.outputLabel || 'Processed output', result.filename));
+            card.appendChild(figures);
+
+            gallery.appendChild(card);
+        });
+
+        state.hasResults = true;
+        refreshButtons();
+        return items.length;
+    };
+
+    const performReset = ({ keepStatus = false } = {}) => {
+        form.reset();
+        try { fileInput.value = ''; } catch (err) { /* ignore */ }
+        clearSampleMode();
+        updateSelection();
+        clearGallery();
+        if (!keepStatus) {
+            setStatus(defaultStatus, 'info');
+        }
+        refreshButtons();
+    };
+
+    fileInput.addEventListener('change', () => {
+        if (state.useSample) {
+            clearSampleMode();
+        }
+        updateSelection();
+        clearGallery();
+        if (currentCount() >= MODULE3_MIN_IMAGES) {
+            setStatus(config.readyStatus || defaultStatus, 'info');
+        } else {
+            setStatus(defaultStatus, 'info');
+        }
+    });
+
+    if (sampleBtn) {
+        sampleBtn.addEventListener('click', async () => {
+            sampleBtn.disabled = true;
+            setStatus('Loading example dataset…', 'info');
+            try {
+                const resp = await fetch('/api/a3/samples');
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load example dataset.');
+                if (!Array.isArray(data.filenames) || data.filenames.length < MODULE3_MIN_IMAGES) {
+                    throw new Error(`Example dataset must contain at least ${MODULE3_MIN_IMAGES} images.`);
+                }
+                state.useSample = true;
+                state.sampleFiles = data.filenames.slice();
+                try { fileInput.value = ''; } catch (err) { /* ignore */ }
+                updateSelection();
+                clearGallery();
+                setStatus(`Loaded example dataset (${state.sampleFiles.length} images).`, 'success');
+            } catch (err) {
+                clearSampleMode();
+                updateSelection();
+                setStatus(err.message || 'Could not load example dataset.', 'error');
+            } finally {
+                sampleBtn.disabled = false;
+            }
+        });
+    }
+
+    resetBtn.addEventListener('click', () => performReset());
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const count = currentCount();
+        if (count < MODULE3_MIN_IMAGES) {
+            setStatus(`Please provide at least ${MODULE3_MIN_IMAGES} images.`, 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        if (state.useSample) {
+            formData.append('sample', '1');
+        } else {
+            Array.from(fileInput.files || []).forEach((file) => formData.append('images', file));
+        }
+
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        setStatus(config.runningStatus || 'Processing images…', 'info');
+
+        try {
+            const response = await fetch(config.endpoint, { method: 'POST', body: formData });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Processing failed.');
+
+            const processedCount = renderGallery(data.results);
+            const datasetLabel = data.source === 'sample' ? 'example dataset' : 'uploaded set';
+            const summaryText = data.message || `${processedCount} images processed from the ${datasetLabel}.`;
+            summaryEl.textContent = summaryText;
+            setStatus(data.message || config.successStatus || 'Processing complete.', 'success');
+        } catch (err) {
+            setStatus(err.message || 'Unexpected error while processing images.', 'error');
+        } finally {
+            refreshButtons();
+        }
+    });
+
+    registerTabChangeListener((prev, next) => {
+        if (prev === 'a3' && next !== 'a3') {
+            performReset({ keepStatus: true });
+        }
+    });
+
+    form.__module3Reset = () => performReset({ keepStatus: false });
+
+    updateSelection();
+    setStatus(defaultStatus, 'info');
 }
 
 const MODULE4_MIN_IMAGES = 8;

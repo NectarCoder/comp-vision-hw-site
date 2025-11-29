@@ -39,7 +39,7 @@ class CustomSIFT:
     # Initialization function
     def __init__(self, sigma=1.6, intervals=3, contrast_threshold=0.04, edge_threshold=10):
         self.sigma = sigma
-        self.intervals = num_intervals
+        self.intervals = intervals
         self.contrast_threshold = contrast_threshold
         self.edge_threshold = edge_threshold
 

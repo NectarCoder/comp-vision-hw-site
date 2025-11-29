@@ -1,13 +1,15 @@
 import base64
 import csv
+import io
 import shutil
 import subprocess
+import zipfile
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import cv2
 import numpy as np
-from flask import Flask, render_template, request, jsonify, send_from_directory, abort, url_for
+from flask import Flask, render_template, request, jsonify, send_from_directory, abort, url_for, send_file
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -41,6 +43,7 @@ MODULE3_SAMPLE_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm3'
 MODULE3_MIN_IMAGES = 10
 MODULE3_PREVIEW_MAX_DIM = 1400
 MODULE3_PART4_SAMPLE_DIR = MODULE3_SAMPLE_DIR / 'part2'
+MODULE3_PART5_OUTPUT_DIR = MODULE3_SAMPLE_DIR / 'part3-sam-outputs'
 MODULE56_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm5_6'
 MODULE56_SAMPLE = MODULE56_DIR / 'aruco-marker.mp4'
 MODULE56_PART2_VIDEO = MODULE56_DIR / 'iphone-moving.mp4'
@@ -202,6 +205,39 @@ def _load_module3_part4_sample_images():
             raise RuntimeError(f'Failed to read Module 3 Part 4 example image {path.name}.')
         uploads.append({'filename': path.name, 'image': image})
     return uploads
+
+
+def _list_module3_part5_pairs():
+    if not MODULE3_PART4_SAMPLE_DIR.exists():
+        raise FileNotFoundError('Module 3 Part 5 source images are missing (part2 folder).')
+    if not MODULE3_PART5_OUTPUT_DIR.exists():
+        raise FileNotFoundError('Module 3 Part 5 SAM outputs are missing (part3-sam-outputs folder).')
+
+    originals = [
+        path for path in MODULE3_PART4_SAMPLE_DIR.iterdir()
+        if (
+            path.is_file()
+            and path.suffix.lower() in ALLOWED_IMAGE_EXTENSIONS
+            and '_detect' not in path.name.lower()
+        )
+    ]
+
+    if not originals:
+        raise ValueError('No source images were found for the Module 3 Part 5 showcase.')
+
+    originals.sort(key=lambda path: _sort_key_natural(path.name))
+    pairs = []
+    for original_path in originals:
+        target_name = f"{original_path.stem}_sam2{original_path.suffix}"
+        sam_path = MODULE3_PART5_OUTPUT_DIR / target_name
+        if not sam_path.exists():
+            continue
+        pairs.append((original_path, sam_path))
+
+    if not pairs:
+        raise ValueError('SAM2 showcase outputs are missing. Populate part3-sam-outputs with *_sam2 files.')
+
+    return pairs
 
 
 def _load_module3_uploads(file_storages):
@@ -1595,6 +1631,78 @@ def handle_a3_part4():
         },
         'message': f"Segmented {len(results)} images by anchoring GrabCut around the ArUco markers from the {source_label}."
     })
+
+
+@app.route('/api/a3/part5/gallery', methods=['GET'])
+def get_a3_part5_gallery():
+    try:
+        pairs = _list_module3_part5_pairs()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    results = []
+    for original_path, sam_path in pairs:
+        try:
+            original_image = _image_file_to_data_url(original_path)
+            sam_image = _image_file_to_data_url(sam_path)
+        except Exception as exc:
+            return jsonify({'error': f'Failed to load showcase image: {exc}'}), 500
+
+        results.append({
+            'filename': original_path.name,
+            'originalImage': original_image,
+            'samImage': sam_image,
+        })
+
+    metadata = {
+        'model': 'sam2.1_hiera_large',
+        'device': 'RTX 4090',
+        'command': (
+            'python module3_part3.py <path/to/image-folder> '
+            '--model-config <path/to/sam2.1_hiera_l.yaml> '
+            '--checkpoint <path/to/sam2.1_hiera_large.pt> '
+            '--device [auto|cuda|mps|cpu] --verbose'
+        ),
+        'pipPackages': [
+            'torch',
+            'sam2',
+            'hydra-core',
+            'omegaconf',
+            'opencv-python',
+            'numpy'
+        ],
+    }
+
+    return jsonify({
+        'count': len(results),
+        'results': results,
+        'metadata': metadata,
+        'message': 'Offline ArUco GrabCut vs. SAM2 comparisons generated with the sam2.1_hiera_large checkpoint on an RTX 4090.'
+    })
+
+
+@app.route('/api/a3/part5/raw-download', methods=['GET'])
+def download_a3_part5_raw():
+    try:
+        sample_paths = _list_module3_part4_sample_paths()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, 'w', zipfile.ZIP_DEFLATED) as archive:
+        for path in sample_paths:
+            archive.write(path, arcname=path.name)
+    buffer.seek(0)
+    return send_file(
+        buffer,
+        mimetype='application/zip',
+        as_attachment=True,
+        download_name='module3-part5-raw-images.zip'
+    )
 
 
 @app.route('/api/a3', methods=['POST'])

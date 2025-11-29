@@ -11,16 +11,8 @@ from typing import Any, Iterable, Sequence, Tuple
 
 import cv2
 import numpy as np
-
-try:  # Optional heavy dependencies (PyTorch + SAM2)
-	import torch
-except ImportError:  # pragma: no cover - torch is optional during linting
-	torch = None  # type: ignore[assignment]
-
-try:
-	import module3_part2 as aruco_module
-except ModuleNotFoundError:  # Allows ``python -m hwsources.module3_part3``
-	from hwsources import module3_part2 as aruco_module  # type: ignore
+import torch
+import module3_part2 as aruco_module
 
 
 LOGGER = logging.getLogger("module3_part3")

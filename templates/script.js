@@ -86,6 +86,42 @@ function switchTab(tabId) {
 
 /* ---------- Source explorer (collapsed panels) ---------- */
 (function () {
+    const sourcePanelsInitialized = new Set();
+
+    function moduleIdFromPanel(panel) {
+        if (!panel) return null;
+        if (panel.dataset.module) return panel.dataset.module;
+        if (panel.id && panel.id.startsWith('source-panel-')) {
+            return panel.id.replace('source-panel-', '');
+        }
+        return null;
+    }
+
+    function setActiveSourceButton(moduleId, activeBtn) {
+        if (!moduleId) return;
+        const buttons = document.querySelectorAll(`.source-file[data-module="${moduleId}"]`);
+        buttons.forEach((btn) => {
+            const isActive = btn === activeBtn;
+            btn.classList.toggle('active', isActive);
+            btn.setAttribute('aria-pressed', String(isActive));
+            if (isActive) {
+                btn.setAttribute('aria-current', 'true');
+            } else {
+                btn.removeAttribute('aria-current');
+            }
+        });
+    }
+
+    function maybeLoadDefaultSource(panel) {
+        if (!panel || !panel.classList.contains('source-panel')) return;
+        const moduleId = moduleIdFromPanel(panel);
+        if (!moduleId || sourcePanelsInitialized.has(moduleId)) return;
+        const firstBtn = panel.querySelector('.source-file');
+        if (!firstBtn) return;
+        sourcePanelsInitialized.add(moduleId);
+        handleFileSelection(firstBtn, { scrollIntoView: false });
+    }
+
     function togglePanel(toggleBtn) {
         const panelId = toggleBtn.getAttribute('aria-controls');
         const panel = document.getElementById(panelId);
@@ -94,7 +130,6 @@ function switchTab(tabId) {
         toggleBtn.setAttribute('aria-expanded', String(!expanded));
 
         // Support both source and video toggle buttons. Choose the
-        // correct label text depending on the button type.
         const isVideo = toggleBtn.classList.contains('video-toggle');
         const isInstructions = toggleBtn.classList.contains('instructions-toggle');
         // toggle open state using a CSS class so transitions (opacity/height)
@@ -107,6 +142,9 @@ function switchTab(tabId) {
             panel.classList.add('open');
             panel.setAttribute('aria-hidden', 'false');
             toggleBtn.setAttribute('aria-expanded', 'true');
+            if (panel && panel.classList.contains('source-panel')) {
+                maybeLoadDefaultSource(panel);
+            }
         }
 
         let collapsedLabel = 'View CLI source code ▾';
@@ -135,22 +173,31 @@ function switchTab(tabId) {
             .forEach(cls => el.classList.remove(cls));
     }
 
-    function handleFileSelection(btn) {
+    function handleFileSelection(btn, options = {}) {
         // Fetch the file from /source/<filename> and load it into the code pane.
-        const moduleId = btn.dataset.module; // e.g. "a1"
+        if (!btn) return;
+        const moduleId = btn.dataset ? btn.dataset.module : null; // e.g. "a1"
+        if (!moduleId) return;
         const codeEl = document.querySelector(`#source-code-${moduleId} code`);
         if (!codeEl) return;
+
+        const { scrollIntoView = true } = options || {};
 
         const sourcePath = btn.dataset.sourcePath;
         if (!sourcePath) {
             codeEl.textContent = '[Error] No source path configured for this file.';
+            setActiveSourceButton(moduleId, btn);
             return;
         }
+
+        setActiveSourceButton(moduleId, btn);
 
         // Visual loading state
         cleanupLanguageClasses(codeEl);
         codeEl.textContent = 'Loading source…';
-        codeEl.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        if (scrollIntoView && codeEl.parentElement) {
+            codeEl.parentElement.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
 
         fetch(`/source/${encodeURIComponent(sourcePath)}`)
             .then(resp => {
@@ -196,6 +243,7 @@ function switchTab(tabId) {
                         const viewBtn = panel.querySelector('.view-raw-btn');
                         const downloadBtn = panel.querySelector('.download-btn');
                         const rawUrl = `/source/${encodeURI(sourcePath)}`; // preserve path separators
+                        const fileLabel = btn.dataset.filename || sourcePath.split('/').pop() || sourcePath;
                         if (viewBtn) {
                             viewBtn.href = rawUrl;
                             viewBtn.removeAttribute('aria-disabled');
@@ -209,6 +257,7 @@ function switchTab(tabId) {
                         if (downloadBtn) {
                             // Add a query param to force the server to send Content-Disposition
                             downloadBtn.href = rawUrl + '?download=1';
+                            downloadBtn.setAttribute('download', fileLabel);
                             downloadBtn.removeAttribute('aria-disabled');
                             downloadBtn.removeAttribute('hidden');
                         }
@@ -298,6 +347,7 @@ async function runModule(id) {
 document.addEventListener('DOMContentLoaded', initModule2Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part1Flow);
 document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
+document.addEventListener('DOMContentLoaded', initModule4Flow);
 
 (function () {
     const themeToggle = document.getElementById('theme-toggle');
@@ -336,6 +386,8 @@ document.addEventListener('DOMContentLoaded', initModule2Part3Flow);
 
 document.addEventListener('DOMContentLoaded', initModule1Flow);
 document.addEventListener('DOMContentLoaded', initModule56Flow);
+document.addEventListener('DOMContentLoaded', initModule56Part2Showcase);
+document.addEventListener('DOMContentLoaded', initModule7Flow);
 
 function initModule56Flow() {
     const form = document.getElementById('module5-6-part1-form');
@@ -558,6 +610,586 @@ function initModule56Flow() {
     });
 }
 
+function initModule56Part2Showcase() {
+    const section = document.getElementById('module5-6-part2');
+    const originalVideo = document.getElementById('module5-6-part2-original-video');
+    const overlayVideo = document.getElementById('module5-6-part2-overlay-video');
+    const overlayPlayer = document.getElementById('module5-6-part2-overlay-player');
+    const overlayCanvas = document.getElementById('module5-6-part2-overlay-canvas');
+    const statusLine = document.getElementById('module5-6-part2-status');
+    const reloadBtn = document.getElementById('module5-6-part2-reload');
+    const originalPlaceholder = document.getElementById('module5-6-part2-original-placeholder');
+    const overlayHint = document.getElementById('module5-6-part2-overlay-hint');
+    const frameLabel = document.getElementById('module5-6-part2-frame');
+    const boxLabel = document.getElementById('module5-6-part2-box');
+    const framesMetric = document.getElementById('module5-6-part2-metric-frames');
+    const resolutionMetric = document.getElementById('module5-6-part2-metric-resolution');
+    const fpsMetric = document.getElementById('module5-6-part2-metric-fps');
+    const durationMetric = document.getElementById('module5-6-part2-metric-duration');
+    const maskNote = document.getElementById('module5-6-part2-mask-note');
+
+    if (!section || !originalVideo || !overlayVideo || !overlayCanvas || !statusLine || !overlayPlayer) {
+        return;
+    }
+
+    const overlayCtx = overlayCanvas.getContext('2d');
+    if (!overlayCtx) {
+        return;
+    }
+    const originalFrame = originalVideo.closest('.result-image');
+    let boxes = [];
+    let fps = 30;
+    let videoFrameCount = 0;
+    let maskFrameCount = 0;
+    let assetsLoaded = false;
+    let isLoading = false;
+    let overlayReady = false;
+    let animationFrameId = null;
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const clampFrameIndex = () => {
+        if (!boxes.length || !overlayVideo) return 0;
+        const idx = Math.round((overlayVideo.currentTime || 0) * fps);
+        const maxIdx = boxes.length - 1;
+        return Math.min(Math.max(idx, 0), maxIdx >= 0 ? maxIdx : 0);
+    };
+
+    const stopAnimation = () => {
+        if (animationFrameId !== null) {
+            cancelAnimationFrame(animationFrameId);
+            animationFrameId = null;
+        }
+    };
+
+    const drawFrame = () => {
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        if (!overlayReady || !boxes.length) {
+            frameLabel.textContent = '--';
+            boxLabel.textContent = '--';
+            return;
+        }
+
+        const idx = clampFrameIndex();
+        const entry = boxes[idx] || null;
+        const frameTotal = videoFrameCount || boxes.length;
+        frameLabel.textContent = frameTotal ? `${idx + 1} / ${frameTotal}` : `${idx + 1}`;
+
+        if (!entry || !entry.box) {
+            boxLabel.textContent = 'No mask';
+            return;
+        }
+
+        const [x1, y1, x2, y2] = entry.box;
+        const width = Math.max(0, x2 - x1);
+        const height = Math.max(0, y2 - y1);
+        const strokeWidth = Math.max(2, overlayCanvas.width * 0.0035);
+
+        overlayCtx.lineWidth = strokeWidth;
+        overlayCtx.strokeStyle = '#29d3d3';
+        overlayCtx.fillStyle = 'rgba(41, 211, 211, 0.22)';
+        overlayCtx.strokeRect(x1, y1, width, height);
+        overlayCtx.fillRect(x1, y1, width, height);
+
+        // subtle corner markers for easier spatial awareness
+        overlayCtx.strokeStyle = '#0df0ff';
+        overlayCtx.lineWidth = Math.max(1, strokeWidth * 0.6);
+        const marker = Math.min(24, width * 0.2, height * 0.2);
+        if (marker > 0) {
+            overlayCtx.beginPath();
+            overlayCtx.moveTo(x1, y1 + marker);
+            overlayCtx.lineTo(x1, y1);
+            overlayCtx.lineTo(x1 + marker, y1);
+            overlayCtx.moveTo(x2 - marker, y1);
+            overlayCtx.lineTo(x2, y1);
+            overlayCtx.lineTo(x2, y1 + marker);
+            overlayCtx.moveTo(x1, y2 - marker);
+            overlayCtx.lineTo(x1, y2);
+            overlayCtx.lineTo(x1 + marker, y2);
+            overlayCtx.moveTo(x2 - marker, y2);
+            overlayCtx.lineTo(x2, y2);
+            overlayCtx.lineTo(x2, y2 - marker);
+            overlayCtx.stroke();
+        }
+
+        boxLabel.textContent = `${width}px × ${height}px`;
+    };
+
+    const startAnimation = () => {
+        stopAnimation();
+        const tick = () => {
+            drawFrame();
+            animationFrameId = requestAnimationFrame(tick);
+        };
+        animationFrameId = requestAnimationFrame(tick);
+    };
+
+    const resetVideos = () => {
+        stopAnimation();
+        overlayReady = false;
+        frameLabel.textContent = '--';
+        boxLabel.textContent = '--';
+        overlayCtx.clearRect(0, 0, overlayCanvas.width, overlayCanvas.height);
+        overlayCanvas.width = overlayCanvas.height = 0;
+        overlayVideo.removeAttribute('src');
+        originalVideo.removeAttribute('src');
+        try { overlayVideo.load(); } catch (e) { /* ignore */ }
+        try { originalVideo.load(); } catch (e) { /* ignore */ }
+        overlayPlayer.classList.remove('ready');
+        if (overlayHint) {
+            overlayHint.textContent = 'Loading overlay…';
+            overlayHint.classList.remove('ready');
+            overlayHint.hidden = false;
+        }
+        if (originalFrame) originalFrame.dataset.empty = 'true';
+        originalVideo.hidden = true;
+        if (originalPlaceholder) originalPlaceholder.hidden = false;
+    };
+
+    const populateMetrics = (data) => {
+        framesMetric.textContent = `${data.maskFrameCount ?? '--'} / ${data.frameCount ?? '--'}`;
+        resolutionMetric.textContent = data.frameWidth && data.frameHeight ? `${data.frameWidth} × ${data.frameHeight}` : '-- × --';
+        fpsMetric.textContent = data.fps ? `${Number(data.fps).toFixed(2)} fps` : '-- fps';
+        durationMetric.textContent = data.durationSeconds ? `${Number(data.durationSeconds).toFixed(2)} s` : '-- s';
+        if (maskNote) {
+            const maskName = data.maskFilename || 'iphone-moving-masks.npz';
+            maskNote.innerHTML = `Masks: <code>${maskName}</code>`;
+        }
+    };
+
+    const handleLoadedMetadata = () => {
+        const width = overlayVideo.videoWidth || 0;
+        const height = overlayVideo.videoHeight || 0;
+        if (!width || !height) return;
+        overlayCanvas.width = width;
+        overlayCanvas.height = height;
+        overlayReady = true;
+        overlayPlayer.classList.add('ready');
+        if (overlayHint) {
+            overlayHint.textContent = 'Press play to visualize the SAM2 track.';
+            overlayHint.classList.add('ready');
+            overlayHint.hidden = false;
+        }
+        drawFrame();
+    };
+
+    overlayVideo.addEventListener('loadedmetadata', handleLoadedMetadata);
+    overlayVideo.addEventListener('play', () => {
+        if (!overlayReady) return;
+        startAnimation();
+    });
+    overlayVideo.addEventListener('pause', stopAnimation);
+    overlayVideo.addEventListener('ended', stopAnimation);
+    overlayVideo.addEventListener('seeking', () => drawFrame());
+    overlayVideo.addEventListener('timeupdate', () => {
+        if (overlayVideo.paused) {
+            drawFrame();
+        }
+    });
+
+    if (originalVideo) {
+        originalVideo.addEventListener('loadeddata', () => {
+            originalVideo.hidden = false;
+            if (originalPlaceholder) originalPlaceholder.hidden = true;
+            if (originalFrame) originalFrame.dataset.empty = 'false';
+        });
+    }
+
+    const loadAssets = async () => {
+        if (isLoading) return;
+        isLoading = true;
+        reloadBtn && (reloadBtn.disabled = true);
+        setStatus('Loading SAM2 assets…', 'info');
+        resetVideos();
+
+        try {
+            const response = await fetch('/api/a56/part2/assets');
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Failed to load assets');
+
+            boxes = Array.isArray(data.boxes) ? data.boxes : [];
+            fps = Number(data.fps) || 30;
+            videoFrameCount = Number(data.frameCount) || boxes.length;
+            maskFrameCount = Number(data.maskFrameCount) || boxes.length;
+            populateMetrics(data);
+
+            const videoUrl = data.videoUrl;
+            if (!videoUrl) {
+                throw new Error('Video URL missing in response');
+            }
+
+            overlayVideo.src = videoUrl;
+            originalVideo.src = videoUrl;
+            overlayVideo.load();
+            originalVideo.load();
+            assetsLoaded = true;
+            setStatus('Assets ready. Scrub or press play to inspect the tracker.', 'success');
+        } catch (err) {
+            boxes = [];
+            assetsLoaded = false;
+            setStatus(err.message || 'Failed to load Module 5 & 6 Part 2 assets.', 'error');
+        } finally {
+            isLoading = false;
+            if (reloadBtn) reloadBtn.disabled = false;
+        }
+    };
+
+    reloadBtn && reloadBtn.addEventListener('click', loadAssets);
+
+    registerTabChangeListener((prev, next) => {
+        if (prev === 'a56' && overlayVideo) {
+            try { overlayVideo.pause(); } catch (e) { /* ignore */ }
+        }
+        if (next === 'a56' && !assetsLoaded && !isLoading) {
+            loadAssets();
+        }
+    });
+
+    loadAssets();
+}
+
+function initModule7Flow() {
+    const form = document.getElementById('module7-part2-form');
+    if (!form) return;
+
+    const fileInput = document.getElementById('module7-video-input');
+    const sampleCheckbox = document.getElementById('module7-use-sample');
+    const runBtn = document.getElementById('module7-run-btn');
+    const resetBtn = document.getElementById('module7-reset-btn');
+    const statusLine = document.getElementById('module7-part2-status');
+    const originalVideo = document.getElementById('module7-original-video');
+    const annotatedVideo = document.getElementById('module7-annotated-video');
+    const originalPlaceholder = document.getElementById('module7-original-placeholder');
+    const annotatedPlaceholder = document.getElementById('module7-annotated-placeholder');
+    const downloadArea = document.getElementById('module7-download-area');
+    const downloadLink = document.getElementById('module7-annotated-download');
+    const csvDownload = document.getElementById('module7-csv-download');
+    const csvWrapper = document.getElementById('module7-csv-wrapper');
+    const csvHead = document.getElementById('module7-csv-head');
+    const csvBody = document.getElementById('module7-csv-body');
+    const csvPlaceholder = document.getElementById('module7-csv-placeholder');
+    const framesMetric = document.getElementById('module7-metric-frames');
+    const durationMetric = document.getElementById('module7-metric-duration');
+    const fpsMetric = document.getElementById('module7-metric-fps');
+    const sizeMetric = document.getElementById('module7-metric-size');
+    const csvMetric = document.getElementById('module7-metric-csv');
+
+    if (!fileInput || !runBtn || !resetBtn || !statusLine || !originalVideo || !annotatedVideo) {
+        return;
+    }
+
+    const SAMPLE_FILENAME = 'karate.mp4';
+    const state = {
+        sampleToken: 0,
+        localPreviewUrl: null,
+        hasResults: false
+    };
+
+    const hasSelection = () => Boolean((fileInput.files && fileInput.files.length) || (sampleCheckbox && sampleCheckbox.checked));
+
+    const setStatus = (message, variant = 'info') => {
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const revokeLocalPreview = () => {
+        if (!state.localPreviewUrl) return;
+        try { URL.revokeObjectURL(state.localPreviewUrl); } catch (err) { /* ignore */ }
+        state.localPreviewUrl = null;
+    };
+
+    const clearVideoElement = (videoEl, placeholder) => {
+        if (!videoEl) return;
+        try { videoEl.pause(); } catch (err) { /* ignore */ }
+        Array.from(videoEl.querySelectorAll('source')).forEach((src) => src.remove());
+        try { videoEl.removeAttribute('src'); } catch (err) { /* ignore */ }
+        videoEl.hidden = true;
+        if (placeholder) placeholder.hidden = false;
+        const wrapper = videoEl.closest('.result-image');
+        if (wrapper) wrapper.dataset.empty = 'true';
+        try { videoEl.load(); } catch (err) { /* ignore */ }
+    };
+
+    const showVideo = (videoEl, placeholder, source) => {
+        if (!videoEl) return;
+        Array.from(videoEl.querySelectorAll('source')).forEach((src) => src.remove());
+        try { videoEl.removeAttribute('src'); } catch (err) { /* ignore */ }
+        if (!source) {
+            clearVideoElement(videoEl, placeholder);
+            return;
+        }
+        const sourceEl = document.createElement('source');
+        sourceEl.src = source;
+        videoEl.appendChild(sourceEl);
+        videoEl.hidden = false;
+        if (placeholder) placeholder.hidden = true;
+        const wrapper = videoEl.closest('.result-image');
+        if (wrapper) wrapper.dataset.empty = 'false';
+        try { videoEl.load(); } catch (err) { /* ignore */ }
+    };
+
+    const resetMetrics = () => {
+        if (framesMetric) framesMetric.textContent = '--';
+        if (durationMetric) durationMetric.textContent = '--';
+        if (fpsMetric) fpsMetric.textContent = '--';
+        if (sizeMetric) sizeMetric.textContent = '-- × --';
+        if (csvMetric) csvMetric.textContent = '--';
+    };
+
+    const formatNumber = (value, digits = 2) => {
+        if (value === null || value === undefined) return null;
+        const num = Number(value);
+        if (!Number.isFinite(num)) return null;
+        return num.toFixed(digits);
+    };
+
+    const updateMetrics = (summary = {}) => {
+        if (framesMetric) framesMetric.textContent = summary.frameCount ?? '--';
+        if (durationMetric) {
+            const formatted = formatNumber(summary.durationSeconds, 2);
+            durationMetric.textContent = formatted ?? '--';
+        }
+        if (fpsMetric) {
+            const formatted = formatNumber(summary.fps, 2);
+            fpsMetric.textContent = formatted ?? '--';
+        }
+        if (sizeMetric) {
+            if (summary.frameWidth && summary.frameHeight) {
+                sizeMetric.textContent = `${summary.frameWidth} × ${summary.frameHeight}`;
+            } else {
+                sizeMetric.textContent = '-- × --';
+            }
+        }
+        if (csvMetric) {
+            const csvCount = summary.csvRowCount ?? summary.recordCount;
+            csvMetric.textContent = csvCount ?? '--';
+        }
+    };
+
+    const resetCsv = () => {
+        if (csvHead) csvHead.innerHTML = '';
+        if (csvBody) csvBody.innerHTML = '';
+        if (csvWrapper) csvWrapper.dataset.empty = 'true';
+        if (csvPlaceholder) csvPlaceholder.hidden = false;
+        if (csvDownload) {
+            csvDownload.hidden = true;
+            csvDownload.href = '#';
+            csvDownload.removeAttribute('download');
+        }
+    };
+
+    const renderCsv = (preview) => {
+        if (!csvHead || !csvBody || !csvWrapper) return;
+        csvHead.innerHTML = '';
+        csvBody.innerHTML = '';
+        if (!preview || !Array.isArray(preview.columns) || !preview.columns.length || !Array.isArray(preview.rows) || !preview.rows.length) {
+            csvWrapper.dataset.empty = 'true';
+            if (csvPlaceholder) csvPlaceholder.hidden = false;
+            return;
+        }
+
+        csvWrapper.dataset.empty = 'false';
+        if (csvPlaceholder) csvPlaceholder.hidden = true;
+
+        const headRow = document.createElement('tr');
+        preview.columns.forEach((col) => {
+            const th = document.createElement('th');
+            th.textContent = col;
+            headRow.appendChild(th);
+        });
+        csvHead.appendChild(headRow);
+
+        preview.rows.forEach((row) => {
+            const tr = document.createElement('tr');
+            preview.columns.forEach((col) => {
+                const td = document.createElement('td');
+                td.textContent = row && row[col] != null ? row[col] : '';
+                tr.appendChild(td);
+            });
+            csvBody.appendChild(tr);
+        });
+    };
+
+    resetMetrics();
+    resetCsv();
+    clearVideoElement(originalVideo, originalPlaceholder);
+    clearVideoElement(annotatedVideo, annotatedPlaceholder);
+    setStatus('Choose a video or enable the sample clip to get started.', 'info');
+    runBtn.disabled = true;
+    resetBtn.disabled = true;
+
+    fileInput.addEventListener('change', () => {
+        revokeLocalPreview();
+        if (fileInput.files && fileInput.files.length) {
+            const file = fileInput.files[0];
+            const url = URL.createObjectURL(file);
+            state.localPreviewUrl = url;
+            showVideo(originalVideo, originalPlaceholder, url);
+            runBtn.disabled = false;
+            resetBtn.disabled = false;
+            setStatus('Ready to run pose tracking.', 'info');
+        } else {
+            clearVideoElement(originalVideo, originalPlaceholder);
+            if (!state.hasResults) resetBtn.disabled = true;
+            runBtn.disabled = !hasSelection();
+            setStatus('Choose a video or enable the sample clip to get started.', 'info');
+        }
+    });
+
+    if (sampleCheckbox) {
+        sampleCheckbox.addEventListener('change', async () => {
+            const token = ++state.sampleToken;
+            if (sampleCheckbox.checked) {
+                fileInput.value = '';
+                fileInput.disabled = true;
+                revokeLocalPreview();
+                clearVideoElement(originalVideo, originalPlaceholder);
+                runBtn.disabled = false;
+                resetBtn.disabled = false;
+                setStatus('Loading sample video preview…', 'info');
+                try {
+                    const resp = await fetch('/api/a7/part2/sample');
+                    const data = await resp.json();
+                    if (token !== state.sampleToken) return;
+                    if (!resp.ok) throw new Error(data.error || 'Failed to load sample');
+                    showVideo(originalVideo, originalPlaceholder, data.video);
+                    setStatus(`Using sample ${data.filename}. Ready to run.`, 'info');
+                } catch (err) {
+                    if (token !== state.sampleToken) return;
+                    setStatus(err.message || 'Failed to load sample.', 'error');
+                    sampleCheckbox.checked = false;
+                    fileInput.disabled = false;
+                    runBtn.disabled = !hasSelection();
+                    if (!state.hasResults) resetBtn.disabled = !hasSelection();
+                }
+            } else {
+                if (token !== state.sampleToken) return;
+                fileInput.disabled = false;
+                if (!hasSelection()) {
+                    clearVideoElement(originalVideo, originalPlaceholder);
+                    runBtn.disabled = true;
+                    if (!state.hasResults) resetBtn.disabled = true;
+                    setStatus('Choose a video or enable the sample clip to get started.', 'info');
+                }
+            }
+        });
+    }
+
+    const performFullReset = () => {
+        form.reset();
+        revokeLocalPreview();
+        state.sampleToken += 1;
+        state.hasResults = false;
+        if (sampleCheckbox) {
+            sampleCheckbox.checked = false;
+            sampleCheckbox.disabled = false;
+        }
+        fileInput.disabled = false;
+        fileInput.value = '';
+        clearVideoElement(originalVideo, originalPlaceholder);
+        clearVideoElement(annotatedVideo, annotatedPlaceholder);
+        resetCsv();
+        resetMetrics();
+        if (downloadArea && downloadLink) {
+            downloadArea.hidden = true;
+            downloadLink.href = '#';
+            downloadLink.removeAttribute('download');
+        }
+        setStatus('Choose a video or enable the sample clip to get started.', 'info');
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+    };
+
+    resetBtn.addEventListener('click', performFullReset);
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        if (!hasSelection()) {
+            setStatus('Please upload a video or enable the sample clip before running.', 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        if (sampleCheckbox && sampleCheckbox.checked) {
+            formData.append('sample', SAMPLE_FILENAME);
+        } else if (fileInput.files && fileInput.files[0]) {
+            formData.append('video', fileInput.files[0]);
+        } else {
+            setStatus('Please choose a video to continue.', 'error');
+            return;
+        }
+
+        setStatus('Uploading video and running pose tracking…', 'info');
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        fileInput.disabled = true;
+        if (sampleCheckbox) sampleCheckbox.disabled = true;
+
+        try {
+            const response = await fetch('/api/a7/part2', {
+                method: 'POST',
+                body: formData
+            });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Process failed');
+
+            revokeLocalPreview();
+            showVideo(originalVideo, originalPlaceholder, data?.original?.video || null);
+            showVideo(annotatedVideo, annotatedPlaceholder, data?.annotated?.video || null);
+
+            if (downloadArea && downloadLink) {
+                if (data?.annotated?.video) {
+                    downloadLink.href = data.annotated.video;
+                    downloadLink.download = data.annotated.filename || 'annotated.mp4';
+                    downloadArea.hidden = false;
+                } else {
+                    downloadLink.href = '#';
+                    downloadLink.removeAttribute('download');
+                    downloadArea.hidden = true;
+                }
+            }
+
+            if (csvDownload && data?.csv?.dataUrl) {
+                csvDownload.href = data.csv.dataUrl;
+                csvDownload.download = data.csv.filename || 'pose-landmarks.csv';
+                csvDownload.hidden = false;
+            } else if (csvDownload) {
+                csvDownload.hidden = true;
+                csvDownload.href = '#';
+                csvDownload.removeAttribute('download');
+            }
+
+            renderCsv(data?.csv?.preview || null);
+            updateMetrics(data?.summary || {});
+            if (csvMetric && data?.csv?.rowCount != null) {
+                csvMetric.textContent = data.csv.rowCount;
+            }
+
+            state.hasResults = true;
+            resetBtn.disabled = false;
+            setStatus(data.message || 'Pose estimation complete.', 'success');
+        } catch (err) {
+            setStatus(err.message || 'Unexpected error occurred.', 'error');
+        } finally {
+            runBtn.disabled = !hasSelection();
+            if (sampleCheckbox) {
+                sampleCheckbox.disabled = false;
+                fileInput.disabled = sampleCheckbox.checked;
+            } else {
+                fileInput.disabled = false;
+            }
+            if (!state.hasResults && !hasSelection()) {
+                resetBtn.disabled = true;
+            }
+        }
+    });
+
+    form.__module7Reset = performFullReset;
+}
+
 /*
  * Global reset button - clears state across modules and UI.
  * Click the existing reset/clear buttons (if available) so module-specific
@@ -617,6 +1249,18 @@ function initGlobalReset() {
             if (log) { log.innerHTML = ''; log.dataset.empty = 'true'; }
             if (count) { count.textContent = '0'; }
             if (templatesGrid) { templatesGrid.innerHTML = ''; }
+        }
+
+        ['module4-part1-form', 'module4-part2-form'].forEach((formId) => {
+            const formEl = document.getElementById(formId);
+            if (formEl && typeof formEl.__module4Reset === 'function') {
+                try { formEl.__module4Reset({ clearServer: true }); } catch (err) { /* ignore */ }
+            }
+        });
+
+        const m7Form = document.getElementById('module7-part2-form');
+        if (m7Form && typeof m7Form.__module7Reset === 'function') {
+            try { m7Form.__module7Reset(); } catch (err) { /* ignore */ }
         }
 
         // Clear any run outputs in simple modules (3, 4, 5-6, 7) and additional UI elements
@@ -1294,6 +1938,294 @@ function initModule2Part3Flow() {
     });
 
     loadReferences();
+}
+
+const MODULE4_MIN_IMAGES = 8;
+
+function initModule4Flow() {
+    const configs = [
+        {
+            key: 'part1',
+            formId: 'module4-part1-form',
+            inputId: 'module4-part1-input',
+            selectionId: 'module4-part1-selection',
+            runBtnId: 'module4-part1-run',
+            resetBtnId: 'module4-part1-reset',
+            statusId: 'module4-part1-status',
+            outputImgId: 'module4-part1-output',
+            placeholderId: 'module4-part1-placeholder',
+            countId: 'module4-part1-count',
+            sizeId: 'module4-part1-size',
+            downloadId: 'module4-part1-download',
+            sampleBtnId: 'module4-part1-sample',
+            endpoint: '/api/a4/part1',
+            clearEndpoint: '/api/a4/part1/results',
+            readyMessage: 'Ready to stitch with the OpenCV pipeline.',
+            uploadMessage: 'Uploading images and running the OpenCV stitcher…',
+            downloadFilename: 'module4-part1-panorama.png'
+        },
+        {
+            key: 'part2',
+            formId: 'module4-part2-form',
+            inputId: 'module4-part2-input',
+            selectionId: 'module4-part2-selection',
+            runBtnId: 'module4-part2-run',
+            resetBtnId: 'module4-part2-reset',
+            statusId: 'module4-part2-status',
+            outputImgId: 'module4-part2-output',
+            placeholderId: 'module4-part2-placeholder',
+            countId: 'module4-part2-count',
+            sizeId: 'module4-part2-size',
+            downloadId: 'module4-part2-download',
+            sampleBtnId: 'module4-part2-sample',
+            endpoint: '/api/a4/part2',
+            clearEndpoint: '/api/a4/part2/results',
+            readyMessage: 'Ready to run the scratch-built stitcher.',
+            uploadMessage: 'Uploading images and running the custom SIFT pipeline…',
+            downloadFilename: 'module4-part2-panorama.png'
+        }
+    ];
+
+    configs.forEach((cfg) => setupModule4Part(cfg));
+}
+
+function setupModule4Part(config) {
+    const form = document.getElementById(config.formId);
+    if (!form) return;
+
+    const fileInput = document.getElementById(config.inputId);
+    const selectionEl = document.getElementById(config.selectionId);
+    const runBtn = document.getElementById(config.runBtnId);
+    const resetBtn = document.getElementById(config.resetBtnId);
+    const statusLine = document.getElementById(config.statusId);
+    const outputImg = document.getElementById(config.outputImgId);
+    const placeholder = document.getElementById(config.placeholderId);
+    const countEl = document.getElementById(config.countId);
+    const sizeEl = document.getElementById(config.sizeId);
+    const downloadBtn = document.getElementById(config.downloadId);
+
+    if (!fileInput || !selectionEl || !runBtn || !resetBtn || !statusLine || !outputImg || !placeholder || !countEl || !sizeEl) {
+        return;
+    }
+
+    const sampleBtn = document.getElementById(config.sampleBtnId);
+    const selectionDefault = selectionEl.innerHTML;
+    const placeholderDefault = placeholder.textContent;
+    const defaultStatus = statusLine.textContent || 'Upload 8+ portrait frames to enable stitching.';
+    const readyMessage = config.readyMessage || 'Ready to stitch.';
+    const uploadMessage = config.uploadMessage || 'Uploading images and stitching…';
+    const state = { hasResults: false, downloadUrl: null, useSample: false, sampleFiles: [] };
+
+    const setStatus = (message, variant = 'info') => {
+        if (!statusLine) return;
+        statusLine.textContent = message;
+        statusLine.dataset.variant = variant;
+    };
+
+    const currentFileCount = () => (state.useSample ? state.sampleFiles.length : (fileInput.files ? fileInput.files.length : 0));
+
+    const resetSelection = () => {
+        selectionEl.dataset.empty = 'true';
+        selectionEl.innerHTML = selectionDefault || '<p>No images selected yet.</p>';
+    };
+
+    const renderFileList = (entries, note) => {
+        selectionEl.dataset.empty = 'false';
+        selectionEl.innerHTML = '';
+        if (note) {
+            const noteEl = document.createElement('p');
+            noteEl.className = 'module4-selection__note';
+            noteEl.textContent = note;
+            selectionEl.appendChild(noteEl);
+        }
+        const list = document.createElement('ol');
+        list.className = 'module4-file-list';
+        entries.forEach((name, index) => {
+            const item = document.createElement('li');
+            item.textContent = `${index + 1}. ${name}`;
+            list.appendChild(item);
+        });
+        selectionEl.appendChild(list);
+    };
+
+    const refreshButtons = () => {
+        const count = currentFileCount();
+        runBtn.disabled = count < MODULE4_MIN_IMAGES;
+        resetBtn.disabled = !(count || state.hasResults);
+    };
+
+    const clearSampleMode = () => {
+        if (!state.useSample) return;
+        state.useSample = false;
+        state.sampleFiles = [];
+    };
+
+    const updateSelection = () => {
+        if (state.useSample && state.sampleFiles.length) {
+            renderFileList(state.sampleFiles, `Example dataset (${state.sampleFiles.length} images)`);
+            refreshButtons();
+            return;
+        }
+
+        const files = Array.from(fileInput.files || []);
+        if (!files.length) {
+            resetSelection();
+            refreshButtons();
+            return;
+        }
+
+        renderFileList(files.map((file) => file.name));
+        refreshButtons();
+    };
+
+    const clearOutput = () => {
+        outputImg.removeAttribute('src');
+        outputImg.hidden = true;
+        placeholder.hidden = false;
+        if (placeholderDefault) placeholder.textContent = placeholderDefault;
+        countEl.textContent = '0';
+        sizeEl.textContent = '-- × --';
+        if (downloadBtn) downloadBtn.hidden = true;
+        state.downloadUrl = null;
+        state.hasResults = false;
+    };
+
+    const performReset = ({ clearServer = true, keepStatus = false } = {}) => {
+        form.reset();
+        try { fileInput.value = ''; } catch (err) { /* ignore readonly errors */ }
+        clearSampleMode();
+        clearOutput();
+        updateSelection();
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        if (!keepStatus) setStatus(defaultStatus, 'info');
+        if (clearServer && config.clearEndpoint) {
+            fetch(config.clearEndpoint, { method: 'DELETE', keepalive: true }).catch(() => { /* best effort */ });
+        }
+    };
+
+    const handleDownload = () => {
+        if (!state.downloadUrl) return;
+        const link = document.createElement('a');
+        link.href = state.downloadUrl;
+        link.download = config.downloadFilename || `${config.key || 'module4'}-panorama.png`;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    };
+
+    const updateButtonsAfterSubmit = () => {
+        refreshButtons();
+    };
+
+    const showResult = (payload, fileCount) => {
+        if (payload.panorama) {
+            outputImg.src = payload.panorama;
+            outputImg.hidden = false;
+            placeholder.hidden = true;
+            state.downloadUrl = payload.panorama;
+            if (downloadBtn) downloadBtn.hidden = false;
+        }
+        countEl.textContent = Number(payload.count || fileCount || 0).toString();
+        if (Number.isFinite(payload.width) && Number.isFinite(payload.height)) {
+            sizeEl.textContent = `${payload.width} × ${payload.height}`;
+        } else {
+            sizeEl.textContent = '-- × --';
+        }
+        state.hasResults = true;
+        resetBtn.disabled = false;
+        setStatus(payload.message || 'Panorama generated successfully.', 'success');
+    };
+
+    fileInput.addEventListener('change', () => {
+        if (state.useSample) {
+            clearSampleMode();
+        }
+        updateSelection();
+        const count = currentFileCount();
+        if (count >= MODULE4_MIN_IMAGES) {
+            setStatus(readyMessage, 'info');
+        } else {
+            setStatus(defaultStatus, 'info');
+        }
+    });
+
+    if (sampleBtn) {
+        sampleBtn.addEventListener('click', async () => {
+            sampleBtn.disabled = true;
+            setStatus('Loading example data…', 'info');
+            try {
+                const resp = await fetch('/api/a4/samples');
+                const data = await resp.json();
+                if (!resp.ok) throw new Error(data.error || 'Failed to load example dataset.');
+                if (!Array.isArray(data.filenames) || data.filenames.length < MODULE4_MIN_IMAGES) {
+                    throw new Error(`Example dataset must contain at least ${MODULE4_MIN_IMAGES} images. Found ${data.filenames?.length || 0}.`);
+                }
+                state.useSample = true;
+                state.sampleFiles = data.filenames.slice();
+                try { fileInput.value = ''; } catch (err) { /* ignore */ }
+                updateSelection();
+                setStatus(`Loaded example dataset (${state.sampleFiles.length} images).`, 'success');
+            } catch (err) {
+                clearSampleMode();
+                updateSelection();
+                setStatus(err.message || 'Could not load example dataset.', 'error');
+            } finally {
+                sampleBtn.disabled = false;
+            }
+        });
+    }
+
+    resetBtn.addEventListener('click', () => {
+        performReset({ clearServer: true });
+    });
+
+    if (downloadBtn) {
+        downloadBtn.addEventListener('click', handleDownload);
+    }
+
+    form.addEventListener('submit', async (event) => {
+        event.preventDefault();
+        const files = Array.from(fileInput.files || []);
+        const fileCount = currentFileCount();
+        if (fileCount < MODULE4_MIN_IMAGES) {
+            setStatus(`Please select at least ${MODULE4_MIN_IMAGES} portrait images.`, 'error');
+            return;
+        }
+
+        const formData = new FormData();
+        if (state.useSample) {
+            formData.append('sample', 'm4');
+        } else {
+            files.forEach((file) => formData.append('images', file));
+        }
+
+        runBtn.disabled = true;
+        resetBtn.disabled = true;
+        setStatus(uploadMessage, 'info');
+
+        try {
+            const response = await fetch(config.endpoint, { method: 'POST', body: formData });
+            const data = await response.json();
+            if (!response.ok) throw new Error(data.error || 'Stitching failed.');
+            showResult(data, fileCount);
+        } catch (err) {
+            setStatus(err.message || 'Unexpected error while stitching.', 'error');
+        } finally {
+            updateButtonsAfterSubmit();
+        }
+    });
+
+    registerTabChangeListener((prev, next) => {
+        if (prev === 'a4' && next !== 'a4') {
+            performReset({ clearServer: state.hasResults || (fileInput.files && fileInput.files.length > 0) });
+        }
+    });
+
+    form.__module4Reset = (options) => performReset(options || { clearServer: true });
+
+    updateSelection();
+    setStatus(defaultStatus, 'info');
 }
 
 function initModule1Flow() {

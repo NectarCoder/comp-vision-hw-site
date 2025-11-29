@@ -1,11 +1,13 @@
 import base64
+import csv
 import shutil
 import subprocess
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
 import cv2
-from flask import Flask, render_template, request, jsonify, send_from_directory, abort
+import numpy as np
+from flask import Flask, render_template, request, jsonify, send_from_directory, abort, url_for
 from flask_cors import CORS
 from werkzeug.utils import secure_filename
 
@@ -15,6 +17,9 @@ import hwsources.module2_part1 as module2_part1
 import hwsources.module5_6_part1 as module5_6
 from hwsources.module2_part2 import process_image as module2_process_image
 import hwsources.module2_part3 as module2_part3
+import hwsources.module4_part1 as module4_part1
+import hwsources.module4_part2 as module4_part2
+import hwsources.module7_part2 as module7_part2
 
 # Serve static assets from the templates folder so they can be moved
 # from /static into /templates while keeping the same "url_for('static', ...)"
@@ -32,6 +37,12 @@ MODULE2_PART2_SAMPLE = MODULE2_PART1_DIR / 'tree.jpg'
 MODULE1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm1'
 MODULE56_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm5_6'
 MODULE56_SAMPLE = MODULE56_DIR / 'aruco-marker.mp4'
+MODULE56_PART2_VIDEO = MODULE56_DIR / 'iphone-moving.mp4'
+MODULE56_PART2_MASKS = MODULE56_DIR / 'iphone-moving-masks.npz'
+MODULE4_MIN_IMAGES = 8
+MODULE4_SAMPLE_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm4'
+MODULE7_RESOURCES_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm7'
+MODULE7_PART2_SAMPLE = MODULE7_RESOURCES_DIR / 'karate.mp4'
 
 VIDEO_MIME_MAP = {
     '.mp4': 'video/mp4',
@@ -80,6 +91,38 @@ def _image_file_to_data_url(path: Path) -> str:
     data = path.read_bytes()
     encoded = base64.b64encode(data).decode('ascii')
     return f"data:{mime};base64,{encoded}"
+
+
+def _video_file_to_data_url(path: Path) -> str:
+    """Return a base64 video data URL for the given file."""
+    mime = VIDEO_MIME_MAP.get(path.suffix.lower(), 'application/octet-stream')
+    data = path.read_bytes()
+    encoded = base64.b64encode(data).decode('ascii')
+    return f"data:{mime};base64,{encoded}"
+
+
+def _csv_to_data_url(path: Path) -> str:
+    data = path.read_bytes()
+    encoded = base64.b64encode(data).decode('ascii')
+    return f"data:text/csv;base64,{encoded}"
+
+
+def _build_csv_preview(csv_path: Path, limit: int = 5):
+    columns = []
+    rows = []
+    total = 0
+    with csv_path.open('r', newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        columns = reader.fieldnames or []
+        for row in reader:
+            total += 1
+            if len(rows) < limit:
+                rows.append({col: row.get(col) for col in columns})
+    return columns, rows, total
+
+
+def _get_request_payload():
+    return request.form if request.form else (request.get_json(silent=True) or {})
 
 
 def _prepare_video_for_web(path: Path) -> Path:
@@ -148,6 +191,281 @@ def _image_array_to_data_url(image, ext: str = '.png') -> str:
 
     encoded = base64.b64encode(buffer.tobytes()).decode('ascii')
     return f"data:{mime};base64,{encoded}"
+
+
+def _sort_key_natural(name: str):
+    """Return a natural sort key using module4's helper when available."""
+    if hasattr(module4_part1, 'correct_number_sorting'):
+        return module4_part1.correct_number_sorting(name)
+    return name.lower()
+
+
+def _load_module4_uploads(file_storages):
+    """Read uploaded portrait images, enforce constraints, and return sorted entries."""
+    files = [fs for fs in (file_storages or []) if fs and fs.filename]
+    if not files:
+        raise ValueError(f'Please upload at least {MODULE4_MIN_IMAGES} portrait images (height greater than width).')
+
+    uploads = []
+    for storage in files:
+        filename = secure_filename(storage.filename) or 'upload.jpg'
+        suffix = Path(filename).suffix.lower()
+        if suffix not in ALLOWED_IMAGE_EXTENSIONS:
+            raise ValueError(f"Unsupported file type for '{filename}'.")
+
+        data = storage.read()
+        if not data:
+            raise ValueError(f"File '{filename}' was empty.")
+        image_array = np.frombuffer(data, dtype=np.uint8)
+        image = cv2.imdecode(image_array, cv2.IMREAD_COLOR)
+        if image is None:
+            raise ValueError(f"Could not decode '{filename}'. Did you upload a valid image?")
+
+        height, width = image.shape[:2]
+        if height <= width:
+            raise ValueError(f"'{filename}' must be portrait oriented (height greater than width).")
+
+        uploads.append({'filename': filename, 'image': image})
+
+    if len(uploads) < MODULE4_MIN_IMAGES:
+        raise ValueError(f'Please upload at least {MODULE4_MIN_IMAGES} portrait images.')
+
+    uploads.sort(key=lambda entry: _sort_key_natural(entry['filename']))
+    return uploads
+
+
+def _list_module4_sample_paths():
+    if not MODULE4_SAMPLE_DIR.exists():
+        raise FileNotFoundError(f"Example image folder missing: {MODULE4_SAMPLE_DIR}")
+
+    sample_paths = [
+        path for path in MODULE4_SAMPLE_DIR.iterdir()
+        if path.is_file() and path.suffix.lower() in ALLOWED_IMAGE_EXTENSIONS
+    ]
+
+    if not sample_paths:
+        raise FileNotFoundError(f"No example images found inside {MODULE4_SAMPLE_DIR}")
+
+    sample_paths.sort(key=lambda path: _sort_key_natural(path.name))
+    return sample_paths
+
+
+def _load_module4_sample_images():
+    sample_paths = _list_module4_sample_paths()
+    uploads = []
+    for path in sample_paths:
+        image = cv2.imread(str(path))
+        if image is None:
+            raise FileNotFoundError(f"Failed to read sample image: {path.name}")
+        height, width = image.shape[:2]
+        if height <= width:
+            raise ValueError(f"Sample image '{path.name}' must be portrait oriented (height > width).")
+        uploads.append({'filename': path.name, 'image': image})
+
+    if len(uploads) < MODULE4_MIN_IMAGES:
+        raise ValueError(f"Example dataset must contain at least {MODULE4_MIN_IMAGES} portrait images. Found {len(uploads)}.")
+
+    return uploads
+
+
+def _collect_module4_inputs():
+    files = _get_module4_files_from_request()
+    payload = request.form or (request.get_json(silent=True) or {})
+    sample_flag = ''
+    if payload:
+        sample_flag = str(payload.get('sample') or '').strip().lower()
+
+    if sample_flag in {'1', 'true', 'yes', 'sample', 'm4', 'example'}:
+        return _load_module4_sample_images(), 'sample'
+
+    if files:
+        return _load_module4_uploads(files), 'upload'
+
+    raise ValueError(f"Please upload at least {MODULE4_MIN_IMAGES} portrait images or click 'Load example data'.")
+
+
+def _stitch_module4_part1(images):
+    """Run the OpenCV (Module 4 Part 1) stitching pipeline and return a panorama image."""
+    if len(images) < 4:
+        raise ValueError('At least 4 images are required to compute the OpenCV panorama.')
+
+    work_width = getattr(module4_part1, 'WORK_WIDTH', 800)
+    erosion_iterations = getattr(module4_part1, 'SEAM_EROSION_ITERATIONS', 1)
+    resized = [module4_part1.resize_image(img, target_width=work_width) for img in images]
+    homographies = [np.identity(3)]
+
+    for idx in range(len(resized) - 1):
+        kps_prev, feats_prev = module4_part1.extract_sift_keypoints_descriptors(resized[idx])
+        kps_curr, feats_curr = module4_part1.extract_sift_keypoints_descriptors(resized[idx + 1])
+        result = module4_part1.match_keypoints_affine(kps_curr, kps_prev, feats_curr, feats_prev)
+        if result is None:
+            raise RuntimeError(f'Unable to align image {idx + 2} with image {idx + 1}. Not enough matches detected.')
+        _, homography_curr_to_prev, _ = result
+        homographies.append(homographies[idx].dot(homography_curr_to_prev))
+
+    middle_index = len(resized) // 2
+    homography_middle_to_0 = homographies[middle_index]
+    homography_0_to_middle = np.linalg.inv(homography_middle_to_0)
+
+    new_homographies = []
+    all_corners = []
+    for img, homography in zip(resized, homographies):
+        new_h = homography_0_to_middle.dot(homography)
+        new_homographies.append(new_h)
+        height, width = img.shape[:2]
+        corners = np.float32([[0, 0], [0, height], [width, height], [width, 0]]).reshape(-1, 1, 2)
+        warped = cv2.perspectiveTransform(corners, new_h)
+        all_corners.append(warped)
+
+    if not all_corners:
+        raise RuntimeError('Failed to determine panorama canvas size.')
+
+    all_corners = np.concatenate(all_corners, axis=0)
+    x_min, y_min = np.int32(all_corners.min(axis=0).ravel())
+    x_max, y_max = np.int32(all_corners.max(axis=0).ravel())
+    output_width, output_height = x_max - x_min, y_max - y_min
+    if output_width <= 0 or output_height <= 0:
+        raise RuntimeError('Computed panorama dimensions were invalid.')
+
+    translation = np.array([[1, 0, -x_min], [0, 1, -y_min], [0, 0, 1]])
+    panorama = np.zeros((output_height, output_width, 3), dtype=np.uint8)
+    erosion_kernel = np.ones((3, 3), np.uint8)
+    draw_order = sorted(range(len(resized)), key=lambda i: abs(i - middle_index), reverse=True)
+
+    for idx in draw_order:
+        final_h = translation.dot(new_homographies[idx])
+        warped = cv2.warpPerspective(resized[idx], final_h, (output_width, output_height), flags=cv2.INTER_LINEAR)
+        gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+        _, mask = cv2.threshold(gray, 1, 255, cv2.THRESH_BINARY)
+        mask = cv2.erode(mask, np.ones((3, 3), np.uint8), iterations=erosion_iterations)
+        panorama[mask > 0] = warped[mask > 0]
+
+    panorama = module4_part1.remove_black_borders(panorama)
+    if panorama is None or panorama.size == 0:
+        raise RuntimeError('OpenCV stitching finished without a valid panorama output.')
+    return panorama
+
+
+def _stitch_module4_part2(images):
+    """Run the custom-from-scratch Module 4 Part 2 pipeline."""
+    if len(images) < 4:
+        raise ValueError('At least 4 images are required to compute the custom panorama.')
+
+    work_width = getattr(module4_part2, 'WORK_WIDTH', 400)
+    resized = [module4_part2.resize_image(img, width=work_width) for img in images]
+    panorama = module4_part2.run_stitching_custom(resized)
+    if panorama is None or panorama.size == 0:
+        raise RuntimeError('Custom stitching failed to return an output image.')
+    return panorama
+
+
+_module56_part2_cache = None
+
+
+def _load_module56_part2_assets():
+    """Load the precomputed SAM2 masks and derive bounding boxes for each frame."""
+    global _module56_part2_cache
+    if _module56_part2_cache is not None:
+        return _module56_part2_cache
+
+    if not MODULE56_PART2_VIDEO.exists():
+        raise FileNotFoundError(f"Part 2 video missing at {MODULE56_PART2_VIDEO}")
+    if not MODULE56_PART2_MASKS.exists():
+        raise FileNotFoundError(f"Mask data missing at {MODULE56_PART2_MASKS}")
+
+    try:
+        with np.load(MODULE56_PART2_MASKS) as data:
+            if 'masks' not in data:
+                raise ValueError('Mask file does not contain a "masks" array')
+            masks = data['masks']
+    except Exception as exc:
+        raise RuntimeError(f'Failed to load SAM2 mask data: {exc}') from exc
+
+    if masks.ndim < 3:
+        raise ValueError('Unexpected mask array shape; expected (frames, height, width).')
+
+    frame_count_masks = int(masks.shape[0])
+    mask_height = int(masks.shape[1])
+    mask_width = int(masks.shape[2]) if masks.ndim >= 3 else int(masks.shape[1])
+    frame_height = mask_height
+    frame_width = mask_width
+
+    boxes = []
+    for idx in range(frame_count_masks):
+        mask = masks[idx]
+        if mask.ndim == 3:
+            mask = mask[..., 0]
+        mask_bool = mask.astype(bool)
+        entry = {'frame': idx, 'box': None}
+        if mask_bool.any():
+            ys, xs = np.where(mask_bool)
+            x1 = int(xs.min())
+            x2 = int(xs.max()) + 1  # treat as exclusive bounds for drawing convenience
+            y1 = int(ys.min())
+            y2 = int(ys.max()) + 1
+            entry['box'] = [x1, y1, x2, y2]
+            entry['normalized'] = {
+                'x1': x1 / mask_width if mask_width else 0.0,
+                'y1': y1 / mask_height if mask_height else 0.0,
+                'x2': x2 / mask_width if mask_width else 0.0,
+                'y2': y2 / mask_height if mask_height else 0.0,
+            }
+            entry['area'] = int((x2 - x1) * (y2 - y1))
+        boxes.append(entry)
+
+    fps = 30.0
+    frame_count_video = frame_count_masks
+    cap = cv2.VideoCapture(str(MODULE56_PART2_VIDEO))
+    if cap is not None and cap.isOpened():
+        fps_read = cap.get(cv2.CAP_PROP_FPS)
+        if fps_read:
+            fps = float(fps_read)
+        width_read = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
+        height_read = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+        if width_read:
+            frame_width = int(width_read)
+        if height_read:
+            frame_height = int(height_read)
+        count_read = cap.get(cv2.CAP_PROP_FRAME_COUNT)
+        if count_read:
+            frame_count_video = int(count_read)
+        cap.release()
+    else:
+        try:
+            cap.release()
+        except Exception:
+            pass
+
+    duration_seconds = frame_count_video / fps if fps else None
+
+    if mask_width and mask_height and frame_width and frame_height:
+        for entry in boxes:
+            norm = entry.get('normalized') or None
+            if not norm:
+                entry['box'] = None
+                entry['area'] = 0
+                continue
+            x1 = int(round(norm['x1'] * frame_width))
+            y1 = int(round(norm['y1'] * frame_height))
+            x2 = int(round(norm['x2'] * frame_width))
+            y2 = int(round(norm['y2'] * frame_height))
+            x1, x2 = max(0, x1), max(0, x2)
+            y1, y2 = max(0, y1), max(0, y2)
+            entry['box'] = [x1, y1, x2, y2]
+            entry['area'] = int(max(0, x2 - x1) * max(0, y2 - y1))
+
+    _module56_part2_cache = {
+        'videoFilename': MODULE56_PART2_VIDEO.name,
+        'frameWidth': frame_width,
+        'frameHeight': frame_height,
+        'fps': float(round(fps, 4)),
+        'frameCount': frame_count_video,
+        'maskFrameCount': frame_count_masks,
+        'durationSeconds': float(round(duration_seconds, 4)) if duration_seconds else None,
+        'maskFilename': MODULE56_PART2_MASKS.name,
+        'boxes': boxes,
+    }
+    return _module56_part2_cache
 
 
 def _run_module2_part1(threshold: float):
@@ -357,6 +675,19 @@ def module_instructions(module_id: str):
     return send_from_directory(INSTRUCTIONS_DIR, pdf_name)
 
 
+@app.route('/media/m56/<path:filename>')
+def serve_module56_media(filename):
+    """Serve whitelisted Module 5 & 6 media assets (videos, mask archives)."""
+    if not filename or '..' in filename:
+        abort(404)
+    safe_name = Path(filename).name
+    target_path = MODULE56_DIR / safe_name
+    if not target_path.exists():
+        abort(404)
+    mimetype = VIDEO_MIME_MAP.get(target_path.suffix.lower())
+    return send_from_directory(str(MODULE56_DIR), safe_name, mimetype=mimetype)
+
+
 def _parse_numeric(data, key, allow_zero=False):
     """Try to coerce JSON field `key` into float, raising ValueError on failure."""
     if key not in data:
@@ -525,6 +856,37 @@ def get_a56_part1_sample():
         return jsonify({'error': f'Failed to load sample video: {exc}'}), 500
 
 
+@app.route('/api/a7/part2/sample', methods=['GET'])
+def get_a7_part2_sample():
+    try:
+        if not MODULE7_PART2_SAMPLE.exists():
+            raise FileNotFoundError(f"Sample video missing at {MODULE7_PART2_SAMPLE}")
+        return jsonify({'filename': MODULE7_PART2_SAMPLE.name, 'video': _video_file_to_data_url(MODULE7_PART2_SAMPLE)})
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load Module 7 sample video: {exc}'}), 500
+
+
+@app.route('/api/a56/part2/assets', methods=['GET'])
+def get_a56_part2_assets():
+    """Return metadata + bounding boxes for the fixed SAM2 showcase video."""
+    try:
+        payload = _load_module56_part2_assets()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 500
+    except Exception as exc:
+        return jsonify({'error': f'Failed to load Module 5/6 Part 2 assets: {exc}'}), 500
+
+    response = dict(payload)
+    response['videoUrl'] = url_for('serve_module56_media', filename=payload['videoFilename'])
+    return jsonify(response)
+
+
 @app.route('/api/a56/part1', methods=['POST'])
 def handle_a56_part1_process():
     """Accept an uploaded video (multipart/form-data) or a `sample` form field and run the ArUco marker tracker.
@@ -605,6 +967,88 @@ def handle_a56_part1_process():
         return jsonify({'error': str(exc)}), 400
     except Exception as exc:
         return jsonify({'error': f'Failed to run Module 5/6 Part 1: {exc}'}), 500
+
+
+def _get_module4_files_from_request():
+    files = request.files.getlist('images')
+    if not files:
+        files = request.files.getlist('images[]')
+    return files
+
+
+@app.route('/api/a4/samples', methods=['GET'])
+def get_a4_samples():
+    try:
+        sample_paths = _list_module4_sample_paths()
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+
+    filenames = [path.name for path in sample_paths]
+    if len(filenames) < MODULE4_MIN_IMAGES:
+        return jsonify({'error': f"Example dataset must contain at least {MODULE4_MIN_IMAGES} portrait images."}), 400
+
+    return jsonify({'count': len(filenames), 'filenames': filenames})
+
+
+@app.route('/api/a4/part1', methods=['POST'])
+def handle_a4_part1_upload():
+    try:
+        uploads, source = _collect_module4_inputs()
+        panorama = _stitch_module4_part1([entry['image'] for entry in uploads])
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to stitch images with OpenCV pipeline: {exc}'}), 500
+
+    source_label = 'example dataset' if source == 'sample' else 'uploaded set'
+    return jsonify({
+        'count': len(uploads),
+        'filenames': [entry['filename'] for entry in uploads],
+        'panorama': _image_array_to_data_url(panorama),
+        'width': int(panorama.shape[1]),
+        'height': int(panorama.shape[0]),
+        'message': f"Stitched {len(uploads)} portrait images ({source_label}) using the OpenCV SIFT pipeline."
+    })
+
+
+@app.route('/api/a4/part2', methods=['POST'])
+def handle_a4_part2_upload():
+    try:
+        uploads, source = _collect_module4_inputs()
+        panorama = _stitch_module4_part2([entry['image'] for entry in uploads])
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except RuntimeError as exc:
+        return jsonify({'error': str(exc)}), 422
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except Exception as exc:
+        return jsonify({'error': f'Failed to stitch images with custom pipeline: {exc}'}), 500
+
+    source_label = 'example dataset' if source == 'sample' else 'uploaded set'
+    return jsonify({
+        'count': len(uploads),
+        'filenames': [entry['filename'] for entry in uploads],
+        'panorama': _image_array_to_data_url(panorama),
+        'width': int(panorama.shape[1]),
+        'height': int(panorama.shape[0]),
+        'message': f"Stitched {len(uploads)} portrait images ({source_label}) using the scratch SIFT + affine pipeline."
+    })
+
+
+@app.route('/api/a4/part1/results', methods=['DELETE'])
+def clear_a4_part1_results():
+    """Stateless endpoint kept for parity with other modules."""
+    return jsonify({'cleared': True})
+
+
+@app.route('/api/a4/part2/results', methods=['DELETE'])
+def clear_a4_part2_results():
+    return jsonify({'cleared': True})
 
 
 @app.route('/api/a2', methods=['POST'])
@@ -812,6 +1256,108 @@ def handle_a7():
     # TODO: Connect Module 7 code
     response = f"[Stub] Module 7 final project placeholder."
     return jsonify({'result': response})
+
+
+@app.route('/api/a7/part2', methods=['POST'])
+def handle_a7_part2_process():
+    """Accept a video upload or use the bundled sample to run pose + hand tracking."""
+    try:
+        payload = _get_request_payload()
+        video_file = request.files.get('video') if request.files else None
+        sample_name = payload.get('sample') if payload else None
+
+        if video_file and video_file.filename == '':
+            return jsonify({'error': 'Empty filename supplied.'}), 400
+
+        if not video_file and not sample_name:
+            return jsonify({'error': 'Please upload a video or choose the example video.'}), 400
+
+        if video_file:
+            filename = secure_filename(video_file.filename) or 'pose-tracking.mp4'
+        else:
+            filename = Path(sample_name).name
+
+        suffix = Path(filename).suffix.lower()
+        if suffix not in ALLOWED_VIDEO_EXTENSIONS:
+            return jsonify({'error': 'Unsupported video format.'}), 400
+
+        with TemporaryDirectory() as tmpdir:
+            tmp_dir_path = Path(tmpdir)
+            input_path = tmp_dir_path / filename
+            if video_file:
+                video_file.save(input_path)
+            else:
+                if filename != MODULE7_PART2_SAMPLE.name or not MODULE7_PART2_SAMPLE.exists():
+                    return jsonify({'error': 'Requested sample is not available.'}), 400
+                shutil.copy2(MODULE7_PART2_SAMPLE, input_path)
+
+            annotated_path = tmp_dir_path / f"{input_path.stem}_annotated.mp4"
+            try:
+                result = module7_part2.run_pose_and_hand_tracking(
+                    input_path,
+                    display=False,
+                    annotated_output_path=annotated_path,
+                )
+            except Exception as exc:
+                return jsonify({'error': f'Pose estimation failed: {exc}'}), 500
+
+            csv_path = Path(result.get('csv_path')) if result.get('csv_path') else None
+            if not csv_path or not csv_path.exists():
+                return jsonify({'error': 'Pose estimation did not produce a CSV file.'}), 500
+
+            annotated_file = result.get('annotated_video_path')
+            annotated_preview = None
+            annotated_filename = None
+            if annotated_file:
+                annotated_file = _prepare_video_for_web(Path(annotated_file))
+                annotated_preview = _video_file_to_data_url(annotated_file)
+                annotated_filename = annotated_file.name
+
+            original_preview = _video_file_to_data_url(input_path)
+            csv_data_url = _csv_to_data_url(csv_path)
+            columns, preview_rows, row_count = _build_csv_preview(csv_path)
+
+            summary = {
+                'frameCount': result.get('frame_count'),
+                'recordCount': result.get('record_count'),
+                'fps': result.get('fps'),
+                'durationSeconds': result.get('duration_seconds'),
+                'frameWidth': result.get('frame_width'),
+                'frameHeight': result.get('frame_height'),
+                'csvRowCount': row_count,
+            }
+
+            response = {
+                'message': f'Pose estimation complete for {filename}',
+                'original': {
+                    'filename': filename,
+                    'video': original_preview,
+                },
+                'annotated': None,
+                'csv': {
+                    'filename': csv_path.name,
+                    'dataUrl': csv_data_url,
+                    'preview': {
+                        'columns': columns,
+                        'rows': preview_rows,
+                    },
+                    'rowCount': row_count,
+                },
+                'summary': summary,
+            }
+            if annotated_preview and annotated_filename:
+                response['annotated'] = {
+                    'filename': annotated_filename,
+                    'video': annotated_preview,
+                }
+
+            return jsonify(response)
+    except FileNotFoundError as exc:
+        return jsonify({'error': str(exc)}), 404
+    except ValueError as exc:
+        return jsonify({'error': str(exc)}), 400
+    except Exception as exc:
+        return jsonify({'error': f'Failed to run Module 7 Part 2: {exc}'}), 500
 
 
 @app.route('/source/<path:filename>')

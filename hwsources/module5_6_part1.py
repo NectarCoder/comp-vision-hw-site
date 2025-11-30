@@ -89,7 +89,13 @@ def ensure_writer(output_path: Optional[str], fps: float, w: int, h: int) -> Opt
 
 
 # Streams frames, annotates detections, and writes the result if requested
-def process_video(input_video: str, output_video: Optional[str] = None, aruco_dict_name: Optional[str] = None, padding: float = 1.0):
+def process_video(
+    input_video: str,
+    output_video: Optional[str] = None,
+    aruco_dict_name: Optional[str] = None,
+    padding: float = 1.0,
+    show_window: bool = False,
+):
     cap = open_video_capture(input_video)
     if not cap or not cap.isOpened():
         print(f"Failed to open input {input_video}")
@@ -117,6 +123,8 @@ def process_video(input_video: str, output_video: Optional[str] = None, aruco_di
     frames_no_detection = 0
     max_keep = 6
 
+    window_name = "Module 5/6 Tracker"
+
     while True:
         ret, frame = cap.read()
         if not ret:
@@ -139,9 +147,16 @@ def process_video(input_video: str, output_video: Optional[str] = None, aruco_di
         if writer:
             writer.write(frame)
 
+        if show_window:
+            cv2.imshow(window_name, frame)
+            if cv2.waitKey(1) & 0xFF == 27:  # ESC to exit early when previewing
+                break
+
     cap.release()
     if writer:
         writer.release()
+    if show_window:
+        cv2.destroyWindow(window_name)
 
 
 # Handles CLI parsing and kicks off processing
@@ -151,6 +166,7 @@ def main(argv=None):
     parser.add_argument("--output", "-o", help="Path to write annotated output video (optional)")
     parser.add_argument("--dict", help="Aruco dictionary name (optional) e.g. 4x4_50, 5x5_100")
     parser.add_argument("--padding", type=float, default=1.0, help="Padding factor to enlarge bounding box around the marker (default 1.0)")
+    parser.add_argument("--show-window", action="store_true", help="Display annotated frames in a preview window while processing")
     args = parser.parse_args(argv)
 
     sample_default = Path("hwsources/resources/m5_6/aruco-marker.mp4")
@@ -167,7 +183,13 @@ def main(argv=None):
         suffix = ".mp4" if in_path.suffix == ".mp4" else in_path.suffix
         output_path = str(in_path.with_name(f"{in_path.stem}-tracked{suffix}"))
 
-    process_video(input_path, output_path, args.dict or None, padding=args.padding)
+    process_video(
+        input_path,
+        output_path,
+        args.dict or None,
+        padding=args.padding,
+        show_window=args.show_window,
+    )
 
 
 # Tries each known dictionary until one actually detects a marker

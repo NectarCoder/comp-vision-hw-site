@@ -48,6 +48,7 @@ MODULE1_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm1'
 MODULE3_SAMPLE_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm3'
 MODULE3_MIN_IMAGES = 10
 MODULE3_PREVIEW_MAX_DIM = 1400
+MODULE3_PART3_PROCESS_MAX_DIM = 2000
 MODULE3_PART4_SAMPLE_DIR = MODULE3_SAMPLE_DIR / 'part2'
 MODULE3_PART5_OUTPUT_DIR = MODULE3_SAMPLE_DIR / 'part3-sam-outputs'
 MODULE56_DIR = PROJECT_ROOT / 'hwsources' / 'resources' / 'm5_6'
@@ -63,6 +64,8 @@ MODULE7_PART1_REFERENCE = MODULE7_PART1_DIR / 'ref.jpeg'
 MODULE7_PART1_LEFT = MODULE7_PART1_DIR / 'left.jpeg'
 MODULE7_PART1_RIGHT = MODULE7_PART1_DIR / 'right.jpeg'
 MODULE7_PART1_MEASUREMENTS = MODULE7_PART1_DIR / 'measurements.md'
+MODULE2_PREVIEW_MAX_DIM = 1400
+MODULE2_JPEG_QUALITY = 85
 
 VIDEO_MIME_MAP = {
     '.mp4': 'video/mp4',
@@ -319,19 +322,21 @@ def _collect_module3_part4_inputs():
     return _load_module3_uploads(files), 'upload'
 
 
-def _run_module3_processor(uploads, processor, part_label):
+def _run_module3_processor(uploads, processor, part_label, *, max_process_dim: int | None = None):
     results = []
     for entry in uploads:
         filename = entry['filename']
+        source_image = entry['image']
+        process_image = _resize_for_processing(source_image, max_process_dim)
         try:
-            processed = processor(entry['image'])
+            processed = processor(process_image)
         except Exception as exc:
             raise RuntimeError(f"Module 3 {part_label}: failed to process {filename}: {exc}") from exc
 
         if processed is None or getattr(processed, 'size', 0) == 0:
             raise RuntimeError(f"Module 3 {part_label}: processing returned an empty result for {filename}.")
 
-        input_preview = _resize_for_preview(entry['image'], MODULE3_PREVIEW_MAX_DIM)
+        input_preview = _resize_for_preview(process_image, MODULE3_PREVIEW_MAX_DIM)
         output_preview = _resize_for_preview(processed, MODULE3_PREVIEW_MAX_DIM)
 
         results.append({
@@ -436,14 +441,17 @@ def _clear_module2_part1_results() -> int:
     return deleted
 
 
-def _image_array_to_data_url(image, ext: str = '.png') -> str:
+def _image_array_to_data_url(image, ext: str = '.png', jpeg_quality: int = 90) -> str:
     """Encode an OpenCV image (np.ndarray) into a base64 data URL."""
     encode_ext = ext if ext.startswith('.') else f'.{ext}'
     mime = 'image/png'
+    encode_params = []
     if encode_ext.lower() in {'.jpg', '.jpeg'}:
         mime = 'image/jpeg'
+        quality = int(np.clip(jpeg_quality, 10, 100))
+        encode_params = [int(cv2.IMWRITE_JPEG_QUALITY), quality]
 
-    success, buffer = cv2.imencode(encode_ext, image)
+    success, buffer = cv2.imencode(encode_ext, image, encode_params)
     if not success:
         raise ValueError('Failed to encode image buffer for response.')
 
@@ -465,6 +473,38 @@ def _resize_for_preview(image, max_dim: int):
     new_width = max(1, int(round(width * scale)))
     new_height = max(1, int(round(height * scale)))
     # INTER_AREA handles down-sampling well.
+    return cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
+
+
+def _image_array_to_preview_data_url(image, max_dim: int, *, jpeg_quality: int = MODULE2_JPEG_QUALITY) -> str:
+    """Resize `image` to fit within `max_dim` and encode as a JPEG data URL."""
+    preview = _resize_for_preview(image, max_dim)
+    return _image_array_to_data_url(preview, ext='.jpg', jpeg_quality=jpeg_quality)
+
+
+def _image_path_to_preview_data_url(path: Path, max_dim: int, *, jpeg_quality: int = MODULE2_JPEG_QUALITY) -> str:
+    """Load an image from disk, resize for preview, and encode as JPEG data URL."""
+    if not path.exists():
+        raise FileNotFoundError(f"Preview image missing: {path}")
+    image = cv2.imread(str(path), cv2.IMREAD_COLOR)
+    if image is None:
+        raise FileNotFoundError(f"Failed to read preview image: {path}")
+    return _image_array_to_preview_data_url(image, max_dim, jpeg_quality=jpeg_quality)
+
+
+def _resize_for_processing(image, max_dim: int | None):
+    """Downscale large inputs before heavy pipelines run to keep latency reasonable."""
+    if image is None or getattr(image, 'size', 0) == 0 or not max_dim or max_dim <= 0:
+        return image
+
+    height, width = image.shape[:2]
+    largest = max(height, width)
+    if largest <= max_dim:
+        return image
+
+    scale = max_dim / float(largest)
+    new_width = max(1, int(round(width * scale)))
+    new_height = max(1, int(round(height * scale)))
     return cv2.resize(image, (new_width, new_height), interpolation=cv2.INTER_AREA)
 
 
@@ -781,7 +821,14 @@ def _run_module2_part1(threshold: float):
             continue
 
         if matched and output_path.exists():
-            image_data = _image_file_to_data_url(output_path)
+            try:
+                image_data = _image_path_to_preview_data_url(
+                    output_path,
+                    MODULE2_PREVIEW_MAX_DIM,
+                    jpeg_quality=MODULE2_JPEG_QUALITY,
+                )
+            except FileNotFoundError:
+                image_data = None
         else:
             image_data = None
 
@@ -793,7 +840,14 @@ def _run_module2_part1(threshold: float):
             'outputFilename': output_path.name if image_data else None,
         })
 
-    scene_data = _image_file_to_data_url(MODULE2_PART1_SCENE)
+    try:
+        scene_data = _image_path_to_preview_data_url(
+            MODULE2_PART1_SCENE,
+            MODULE2_PREVIEW_MAX_DIM,
+            jpeg_quality=MODULE2_JPEG_QUALITY,
+        )
+    except FileNotFoundError:
+        scene_data = _image_file_to_data_url(MODULE2_PART1_SCENE)
 
     matched_count = sum(1 for m in matches if m['matched'])
     return {
@@ -835,7 +889,11 @@ def _load_module2_part3_references():
     return {
         'scene': {
             'filename': MODULE2_PART1_SCENE.name,
-            'image': _image_file_to_data_url(MODULE2_PART1_SCENE),
+            'image': _image_path_to_preview_data_url(
+                MODULE2_PART1_SCENE,
+                MODULE2_PREVIEW_MAX_DIM,
+                jpeg_quality=MODULE2_JPEG_QUALITY,
+            ),
         },
         'templates': templates_payload,
     }
@@ -893,15 +951,31 @@ def _run_module2_part3(threshold: float, blur_multiplier: float):
         for (box, score, label) in all_detections
     ]
 
+    scene_preview = _image_array_to_preview_data_url(
+        scene,
+        MODULE2_PREVIEW_MAX_DIM,
+        jpeg_quality=MODULE2_JPEG_QUALITY,
+    )
+    detections_preview = _image_array_to_preview_data_url(
+        drawn,
+        MODULE2_PREVIEW_MAX_DIM,
+        jpeg_quality=MODULE2_JPEG_QUALITY,
+    )
+    blurred_preview = _image_array_to_preview_data_url(
+        blurred,
+        MODULE2_PREVIEW_MAX_DIM,
+        jpeg_quality=MODULE2_JPEG_QUALITY,
+    )
+
     result = {
         'threshold': threshold,
         'blurMultiplier': blur_multiplier,
         'scene': {
             'filename': MODULE2_PART1_SCENE.name,
-            'image': _image_file_to_data_url(MODULE2_PART1_SCENE),
+            'image': scene_preview,
         },
-        'detectionsImage': _image_array_to_data_url(drawn),
-        'blurredImage': _image_array_to_data_url(blurred),
+        'detectionsImage': detections_preview,
+        'blurredImage': blurred_preview,
         'detections': detection_payload,
         'summary': {
             'detected': len(all_detections),
@@ -1506,9 +1580,18 @@ def get_a2_part1_scene():
     if not MODULE2_PART1_SCENE.exists():
         return jsonify({'error': f"Scene file missing at {MODULE2_PART1_SCENE}"}), 404
 
+    try:
+        image_data = _image_path_to_preview_data_url(
+            MODULE2_PART1_SCENE,
+            MODULE2_PREVIEW_MAX_DIM,
+            jpeg_quality=MODULE2_JPEG_QUALITY,
+        )
+    except FileNotFoundError:
+        image_data = _image_file_to_data_url(MODULE2_PART1_SCENE)
+
     return jsonify({
         'filename': MODULE2_PART1_SCENE.name,
-        'image': _image_file_to_data_url(MODULE2_PART1_SCENE),
+        'image': image_data,
     })
 
 
@@ -1721,7 +1804,12 @@ def handle_a3_part2():
 def handle_a3_part3():
     try:
         uploads, source = _collect_module3_inputs()
-        results = _run_module3_processor(uploads, module3_part1.find_exact_boundary, 'Part 3')
+        results = _run_module3_processor(
+            uploads,
+            module3_part1.find_exact_boundary,
+            'Part 3',
+            max_process_dim=MODULE3_PART3_PROCESS_MAX_DIM,
+        )
     except ValueError as exc:
         return jsonify({'error': str(exc)}), 400
     except FileNotFoundError as exc:

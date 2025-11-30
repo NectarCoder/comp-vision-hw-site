@@ -2091,91 +2091,145 @@ function initModule7Flow() {
 function initGlobalReset() {
     const globalResetBtn = document.getElementById('global-reset-btn');
     if (!globalResetBtn) return;
+    const defaultLabel = globalResetBtn.textContent.trim() || 'Reset All';
 
-    globalResetBtn.addEventListener('click', async () => {
-        const confirmed = confirm('Reset all modules and clear results? This will clear images, points, and outputs across every module.');
-        if (!confirmed) return;
-
-        // Module 1: reuse existing reset handler by clicking the button
-        const m1Reset = document.getElementById('module1-reset');
-        if (m1Reset) try { m1Reset.click(); } catch (err) { /* ignore */ }
-
-        // Module 2 Part 1: clear UI + server results
-        const m2part1Clear = document.getElementById('module2-part1-clear-btn');
-        if (m2part1Clear && !m2part1Clear.disabled) {
-            try { m2part1Clear.click(); } catch (err) { /* ignore */ }
-        } else if (m2part1Clear) {
-            // If the button exists but is disabled, still attempt to clear server-side results
-            try { await fetch('/api/a2/part1/results', { method: 'DELETE' }); } catch (_) { /* ignore errors */ }
-        }
-
-        // Module 2 Part 2: clear form and outputs
-        const m2ResetBtn = document.getElementById('module2-reset-btn');
-        if (m2ResetBtn && !m2ResetBtn.disabled) {
-            try { m2ResetBtn.click(); } catch (err) { /* ignore */ }
+    const setBusyState = (isBusy) => {
+        if (isBusy) {
+            globalResetBtn.disabled = true;
+            globalResetBtn.dataset.state = 'resetting';
+            globalResetBtn.textContent = 'Resetting…';
         } else {
-            // fallback to reset the form elements
-            const f2 = document.getElementById('module2-part2-form');
-            if (f2 && typeof f2.reset === 'function') f2.reset();
-            const original = document.getElementById('module2-original-preview');
-            const blurred = document.getElementById('module2-blurred-preview');
-            const restored = document.getElementById('module2-restored-preview');
-            if (original) { original.src = ''; original.hidden = true; }
-            if (blurred) { blurred.src = ''; blurred.hidden = true; }
-            if (restored) { restored.src = ''; restored.hidden = true; }
+            globalResetBtn.disabled = false;
+            globalResetBtn.textContent = defaultLabel;
+            delete globalResetBtn.dataset.state;
         }
+    };
 
-        // Module 2 Part 3: clear results
-        const m2part3Reset = document.getElementById('module2-part3-reset-btn');
-        if (m2part3Reset && !m2part3Reset.disabled) {
-            try { m2part3Reset.click(); } catch (err) { /* ignore */ }
-        } else {
-            const f3 = document.getElementById('module2-part3-form');
-            if (f3 && typeof f3.reset === 'function') f3.reset();
-            const detImg = document.getElementById('module2-part3-detections');
-            const blurImg = document.getElementById('module2-part3-blurred');
-            const log = document.getElementById('module2-part3-detection-log');
-            const count = document.getElementById('module2-part3-detection-count');
-            const templatesGrid = document.getElementById('module2-part3-templates-grid');
-            if (detImg) { detImg.src = ''; detImg.hidden = true; }
-            if (blurImg) { blurImg.src = ''; blurImg.hidden = true; }
-            if (log) { log.innerHTML = ''; log.dataset.empty = 'true'; }
-            if (count) { count.textContent = '0'; }
-            if (templatesGrid) { templatesGrid.innerHTML = ''; }
+    const triggerButton = (id) => {
+        if (!id) return false;
+        const btn = document.getElementById(id);
+        if (!btn) return false;
+        const wasDisabled = btn.disabled;
+        if (wasDisabled) btn.disabled = false;
+        try { btn.dispatchEvent(new MouseEvent('click', { bubbles: true })); } catch (err) { console.warn(`Global reset could not trigger ${id}`, err); }
+        if (wasDisabled) btn.disabled = true;
+        return true;
+    };
+
+    const clearModule2Part2UI = () => {
+        const form = document.getElementById('module2-part2-form');
+        if (form && typeof form.reset === 'function') form.reset();
+        const previewConfigs = [
+            { imgId: 'module2-original-preview', placeholderId: 'module2-original-placeholder', emptyText: 'No image selected.' },
+            { imgId: 'module2-blurred-preview', placeholderId: 'module2-blurred-placeholder', emptyText: 'No output yet.' },
+            { imgId: 'module2-restored-preview', placeholderId: 'module2-restored-placeholder', emptyText: 'No output yet.' }
+        ];
+        previewConfigs.forEach(({ imgId, placeholderId, emptyText }) => {
+            const img = document.getElementById(imgId);
+            const placeholder = document.getElementById(placeholderId);
+            if (img) {
+                img.removeAttribute('src');
+                img.hidden = true;
+                img.dataset.loaded = 'false';
+                const wrapper = img.closest('.result-image');
+                if (wrapper) wrapper.dataset.empty = 'true';
+            }
+            if (placeholder) {
+                placeholder.hidden = false;
+                placeholder.textContent = emptyText;
+            }
+        });
+        const fileInput = document.getElementById('module2-image-input');
+        if (fileInput) {
+            fileInput.value = '';
+            fileInput.disabled = false;
         }
+        const useSampleCheckbox = document.getElementById('module2-use-sample');
+        if (useSampleCheckbox) {
+            useSampleCheckbox.checked = false;
+            useSampleCheckbox.disabled = false;
+        }
+        const runBtn = document.getElementById('module2-run-btn');
+        if (runBtn) runBtn.disabled = true;
+        const resetBtn = document.getElementById('module2-reset-btn');
+        if (resetBtn) resetBtn.disabled = true;
+        const statusLine = document.getElementById('module2-part2-status');
+        if (statusLine) {
+            statusLine.textContent = 'Choose an image to get started.';
+            statusLine.dataset.variant = 'info';
+        }
+    };
 
+    const clearModule2Part3UI = () => {
+        const form = document.getElementById('module2-part3-form');
+        if (form && typeof form.reset === 'function') form.reset();
+        const outputConfigs = [
+            { imgId: 'module2-part3-detections', placeholderId: 'module2-part3-detections-placeholder', emptyText: 'Run detection to see annotated matches.' },
+            { imgId: 'module2-part3-blurred', placeholderId: 'module2-part3-blurred-placeholder', emptyText: 'Run detection to generate the blurred output.' }
+        ];
+        outputConfigs.forEach(({ imgId, placeholderId, emptyText }) => {
+            const img = document.getElementById(imgId);
+            const placeholder = document.getElementById(placeholderId);
+            if (img) {
+                img.removeAttribute('src');
+                img.hidden = true;
+                const wrapper = img.closest('.result-image');
+                if (wrapper) wrapper.dataset.empty = 'true';
+            }
+            if (placeholder) {
+                placeholder.hidden = false;
+                placeholder.textContent = emptyText;
+            }
+        });
+        const log = document.getElementById('module2-part3-detection-log');
+        if (log) {
+            log.dataset.empty = 'true';
+            log.textContent = 'Run the detector to list every match, including its template label and correlation score.';
+        }
+        const count = document.getElementById('module2-part3-detection-count');
+        if (count) count.textContent = '0';
+        const templateCount = document.getElementById('module2-part3-template-count');
+        if (templateCount) templateCount.textContent = '0';
+        const templatesGrid = document.getElementById('module2-part3-templates-grid');
+        if (templatesGrid) {
+            templatesGrid.dataset.empty = 'true';
+            templatesGrid.innerHTML = '';
+            let placeholder = document.getElementById('module2-part3-templates-placeholder');
+            if (!placeholder) {
+                placeholder = document.createElement('p');
+                placeholder.id = 'module2-part3-templates-placeholder';
+                placeholder.textContent = 'Fetching template thumbnails…';
+            }
+            templatesGrid.appendChild(placeholder);
+        }
+        const statusLine = document.getElementById('module2-part3-status');
+        if (statusLine) {
+            statusLine.textContent = 'Reference assets will load automatically — adjust the parameters and run whenever you are ready.';
+            statusLine.dataset.variant = 'info';
+        }
+        const resetBtn = document.getElementById('module2-part3-reset-btn');
+        if (resetBtn) resetBtn.disabled = true;
+    };
+
+    const resetModule3Forms = () => {
+        ['module3-part1-form', 'module3-part2-form', 'module3-part3-form', 'module3-part4-form'].forEach((formId) => {
+            const formEl = document.getElementById(formId);
+            if (formEl && typeof formEl.__module3Reset === 'function') {
+                try { formEl.__module3Reset(); } catch (err) { console.warn(`Module 3 reset failed for ${formId}`, err); }
+            }
+        });
+    };
+
+    const resetModule4Forms = () => {
         ['module4-part1-form', 'module4-part2-form'].forEach((formId) => {
             const formEl = document.getElementById(formId);
             if (formEl && typeof formEl.__module4Reset === 'function') {
-                try { formEl.__module4Reset({ clearServer: true }); } catch (err) { /* ignore */ }
+                try { formEl.__module4Reset({ clearServer: true }); } catch (err) { console.warn(`Module 4 reset failed for ${formId}`, err); }
             }
         });
+    };
 
-        ['module3-part1-form', 'module3-part2-form', 'module3-part3-form'].forEach((formId) => {
-            const formEl = document.getElementById(formId);
-            if (formEl && typeof formEl.__module3Reset === 'function') {
-                try { formEl.__module3Reset(); } catch (err) { /* ignore */ }
-            }
-        });
-
-        const m7Form = document.getElementById('module7-part2-form');
-        if (m7Form && typeof m7Form.__module7Reset === 'function') {
-            try { m7Form.__module7Reset(); } catch (err) { /* ignore */ }
-        }
-
-        if (typeof window.__module7Part1Reset === 'function') {
-            try { window.__module7Part1Reset(); } catch (err) { /* ignore */ }
-        }
-
-        // Clear any run outputs in simple modules (4, 5-6, 7) and additional UI elements
-        ['a4', 'a56', 'a7'].forEach((id) => {
-            const input = document.getElementById(`input-${id}`);
-            const output = document.getElementById(`output-${id}`);
-            if (input && 'value' in input) input.value = '';
-            if (output && 'textContent' in output) output.textContent = '// Output will appear here...';
-        });
-
-        // Also clear Module 5 & 6 specific video inputs and playback elements
+    const clearModule56Media = () => {
         const m56File = document.getElementById('module5-6-video-input');
         const m56InVideo = document.getElementById('module5-6-input-video');
         const m56OutVideo = document.getElementById('module5-6-output-video');
@@ -2183,37 +2237,110 @@ function initGlobalReset() {
         const m56OutPlaceholder = document.getElementById('module5-6-output-placeholder');
         if (m56File) m56File.value = '';
         if (m56InVideo) {
-            try { m56InVideo.pause(); m56InVideo.removeAttribute('src'); m56InVideo.load(); } catch (e) { /* ignore */ }
-            if (m56InPlaceholder) { m56InPlaceholder.hidden = false; }
+            try { m56InVideo.pause(); m56InVideo.removeAttribute('src'); m56InVideo.load(); } catch (err) { /* ignore */ }
             m56InVideo.hidden = true;
+            if (m56InPlaceholder) m56InPlaceholder.hidden = false;
         }
         if (m56OutVideo) {
-            try { m56OutVideo.pause(); m56OutVideo.removeAttribute('src'); m56OutVideo.load(); } catch (e) { /* ignore */ }
-            if (m56OutPlaceholder) { m56OutPlaceholder.hidden = false; }
+            try { m56OutVideo.pause(); m56OutVideo.removeAttribute('src'); m56OutVideo.load(); } catch (err) { /* ignore */ }
             m56OutVideo.hidden = true;
+            if (m56OutPlaceholder) m56OutPlaceholder.hidden = false;
         }
-        // hide download area
-        const m56Download = document.getElementById('module5-6-download-area');
-        if (m56Download) m56Download.style.display = 'none';
+        const dlArea = document.getElementById('module5-6-download-area');
+        if (dlArea) dlArea.style.display = 'none';
+        const dlLink = document.getElementById('module5-6-download-link');
+        if (dlLink) dlLink.removeAttribute('href');
         const m56UseSample = document.getElementById('module5-6-use-sample');
         if (m56UseSample) {
-            try { m56UseSample.checked = false; } catch (e) { /* ignore */ }
-            try { m56File.disabled = false; } catch (e) { /* ignore */ }
+            m56UseSample.checked = false;
+            m56UseSample.disabled = false;
         }
+    };
 
-        // Ensure Module 1 inputs are cleared (extra cleanup to cover all cases)
-        const refFile = document.getElementById('ref-image-input');
-        const testFile = document.getElementById('test-image-input');
-        if (refFile) refFile.value = '';
-        if (testFile) testFile.value = '';
-        // Remove any 'autofilled' highlights that may remain
-        document.querySelectorAll('.autofilled').forEach(el => el.classList.remove('autofilled'));
-        // reset test expected value hint if present
-        const expectedEl = document.getElementById('test-expected-value');
-        if (expectedEl) expectedEl.textContent = '--';
+    const collapsePanels = () => {
+        const toggleSelectors = ['.instructions-toggle', '.video-toggle', '.source-toggle'];
+        document.querySelectorAll(toggleSelectors.join(',')).forEach((btn) => {
+            if (btn.getAttribute('aria-expanded') !== 'true') return;
+            const panelId = btn.getAttribute('aria-controls');
+            const panel = panelId ? document.getElementById(panelId) : null;
+            if (panel) {
+                panel.classList.remove('open');
+                panel.setAttribute('aria-hidden', 'true');
+            }
+            btn.setAttribute('aria-expanded', 'false');
+            if (btn.classList.contains('video-toggle')) {
+                btn.textContent = 'Watch the video ▾';
+            } else if (btn.classList.contains('instructions-toggle')) {
+                btn.textContent = 'View module instructions ▾';
+            } else {
+                btn.textContent = 'View CLI source code ▾';
+            }
+        });
+    };
 
-        // Provide a small visual confirmation in the current tab (call the status areas)
-        try { document.getElementById('ref-status').textContent = 'All modules reset.'; document.getElementById('test-status').textContent = 'All modules reset.'; } catch(e) { }
+    const resetSimpleIoBlocks = () => {
+        ['a4', 'a56', 'a7'].forEach((id) => {
+            const input = document.getElementById(`input-${id}`);
+            const output = document.getElementById(`output-${id}`);
+            if (input && 'value' in input) input.value = '';
+            if (output && 'textContent' in output) output.textContent = '// Output will appear here...';
+        });
+    };
+
+    globalResetBtn.addEventListener('click', async () => {
+        const confirmed = confirm('Reset all modules and clear results? This will clear images, points, and outputs across every module.');
+        if (!confirmed) return;
+
+        setBusyState(true);
+        try {
+            triggerButton('module1-reset');
+
+            try { await fetch('/api/a2/part1/results', { method: 'DELETE' }); } catch (err) { console.warn('Failed to clear Module 2 Part 1 cache', err); }
+            triggerButton('module2-part1-clear-btn');
+
+            triggerButton('module2-reset-btn');
+            clearModule2Part2UI();
+
+            triggerButton('module2-part3-reset-btn');
+            clearModule2Part3UI();
+
+            resetModule3Forms();
+            resetModule4Forms();
+
+            const module7Form = document.getElementById('module7-part2-form');
+            if (module7Form && typeof module7Form.__module7Reset === 'function') {
+                try { module7Form.__module7Reset(); } catch (err) { console.warn('Module 7 Part 2 reset failed', err); }
+            }
+            if (typeof window.__module7Part1Reset === 'function') {
+                try { window.__module7Part1Reset(); } catch (err) { console.warn('Module 7 Part 1 reset failed', err); }
+            }
+
+            triggerButton('module5-6-reset-btn');
+            clearModule56Media();
+
+            resetSimpleIoBlocks();
+            collapsePanels();
+
+            // Ensure Module 1 file inputs are cleared regardless of UI state
+            const refFile = document.getElementById('ref-image-input');
+            const testFile = document.getElementById('test-image-input');
+            if (refFile) refFile.value = '';
+            if (testFile) testFile.value = '';
+
+            document.querySelectorAll('.autofilled').forEach((el) => el.classList.remove('autofilled'));
+            document.querySelectorAll('.autofilled-pulse').forEach((el) => el.classList.remove('autofilled-pulse'));
+            const expectedEl = document.getElementById('test-expected-value');
+            if (expectedEl) expectedEl.textContent = '--';
+
+            document.dispatchEvent(new CustomEvent('globalreset', { detail: { triggeredAt: Date.now() } }));
+
+            try {
+                document.getElementById('ref-status').textContent = 'All modules reset.';
+                document.getElementById('test-status').textContent = 'All modules reset.';
+            } catch (err) { /* ignore */ }
+        } finally {
+            setBusyState(false);
+        }
     });
 }
 
@@ -2893,9 +3020,10 @@ function initModule3Flow() {
             summaryId: 'module3-part3-summary',
             endpoint: '/api/a3/part3',
             readyStatus: 'Ready to extract object boundaries.',
-            runningStatus: 'Running contour extraction…',
+            runningStatus: 'Running contour extraction — please be patient while the results render…',
             outputLabel: 'Boundary overlay',
-            successStatus: 'Boundary overlay generated.'
+            successStatus: 'Boundary overlay generated.',
+            showProcessingIndicator: true
         },
         {
             key: 'part4',
@@ -2911,10 +3039,11 @@ function initModule3Flow() {
             endpoint: '/api/a3/part4',
             sampleEndpoint: '/api/a3/part4/samples',
             readyStatus: 'Ready to run the marker-guided cutout.',
-            runningStatus: 'Detecting ArUco markers and running GrabCut…',
+            runningStatus: 'Detecting ArUco markers and running GrabCut — please be patient…',
             outputLabel: 'Marker-guided cutout',
             successStatus: 'Marker-guided cutouts generated.',
-            enableLightbox: true
+            enableLightbox: true,
+            showProcessingIndicator: true
         }
     ];
 
@@ -3139,7 +3268,8 @@ function setupModule3Part(config) {
         return;
     }
 
-    const defaultStatus = statusLine.textContent || 'Upload ≥10 images or use the example dataset to begin.';
+    const showProcessingIndicator = Boolean(config.showProcessingIndicator);
+    const defaultStatus = (statusLine.textContent || 'Upload ≥10 images or use the example dataset to begin.').trim();
     const defaultSummary = summaryEl.textContent || '';
     const defaultSelectionHtml = selectionEl.innerHTML;
     const defaultGalleryHtml = gallery.innerHTML;
@@ -3149,13 +3279,29 @@ function setupModule3Part(config) {
         hasResults: false
     };
 
+    const statusText = document.createElement('span');
+    statusText.className = 'status-line__text';
+    statusText.textContent = defaultStatus;
+    const statusSpinner = document.createElement('span');
+    statusSpinner.className = 'status-spinner';
+    statusSpinner.setAttribute('aria-hidden', 'true');
+    statusLine.textContent = '';
+    statusLine.append(statusSpinner, statusText);
+
     if (config.enableLightbox) {
         gallery.classList.add('module3-gallery--interactive');
     }
 
-    const setStatus = (message, variant = 'info') => {
-        statusLine.textContent = message;
+    const setStatus = (message, variant = 'info', options) => {
+        statusText.textContent = message;
         statusLine.dataset.variant = variant;
+        if (showProcessingIndicator) {
+            if (options && options.loading) {
+                statusLine.dataset.loading = 'true';
+            } else {
+                statusLine.removeAttribute('data-loading');
+            }
+        }
     };
 
     const currentCount = () => (state.useSample ? state.sampleFiles.length : (fileInput.files ? fileInput.files.length : 0));
@@ -3373,7 +3519,8 @@ function setupModule3Part(config) {
 
         runBtn.disabled = true;
         resetBtn.disabled = true;
-        setStatus(config.runningStatus || 'Processing images…', 'info');
+        const loadingOptions = showProcessingIndicator ? { loading: true } : undefined;
+        setStatus(config.runningStatus || 'Processing images…', 'info', loadingOptions);
 
         try {
             const response = await fetch(config.endpoint, { method: 'POST', body: formData });
@@ -3445,8 +3592,9 @@ function initModule4Flow() {
             endpoint: '/api/a4/part2',
             clearEndpoint: '/api/a4/part2/results',
             readyMessage: 'Ready to run the scratch-built stitcher.',
-            uploadMessage: 'Uploading images and running the custom SIFT pipeline…',
-            downloadFilename: 'module4-part2-panorama.png'
+            uploadMessage: 'Uploading images and running the custom SIFT pipeline — please be patient…',
+            downloadFilename: 'module4-part2-panorama.png',
+            showProcessingIndicator: true
         }
     ];
 
@@ -3475,15 +3623,32 @@ function setupModule4Part(config) {
     const sampleBtn = document.getElementById(config.sampleBtnId);
     const selectionDefault = selectionEl.innerHTML;
     const placeholderDefault = placeholder.textContent;
-    const defaultStatus = statusLine.textContent || 'Upload 8+ portrait frames to enable stitching.';
+    const showProcessingIndicator = Boolean(config.showProcessingIndicator);
+    const defaultStatus = (statusLine.textContent || 'Upload 8+ portrait frames to enable stitching.').trim();
     const readyMessage = config.readyMessage || 'Ready to stitch.';
     const uploadMessage = config.uploadMessage || 'Uploading images and stitching…';
     const state = { hasResults: false, downloadUrl: null, useSample: false, sampleFiles: [] };
 
-    const setStatus = (message, variant = 'info') => {
+    const statusText = document.createElement('span');
+    statusText.className = 'status-line__text';
+    statusText.textContent = defaultStatus;
+    const statusSpinner = document.createElement('span');
+    statusSpinner.className = 'status-spinner';
+    statusSpinner.setAttribute('aria-hidden', 'true');
+    statusLine.textContent = '';
+    statusLine.append(statusSpinner, statusText);
+
+    const setStatus = (message, variant = 'info', options) => {
         if (!statusLine) return;
-        statusLine.textContent = message;
+        statusText.textContent = message;
         statusLine.dataset.variant = variant;
+        if (showProcessingIndicator) {
+            if (options && options.loading) {
+                statusLine.dataset.loading = 'true';
+            } else {
+                statusLine.removeAttribute('data-loading');
+            }
+        }
     };
 
     const currentFileCount = () => (state.useSample ? state.sampleFiles.length : (fileInput.files ? fileInput.files.length : 0));
@@ -3666,7 +3831,8 @@ function setupModule4Part(config) {
 
         runBtn.disabled = true;
         resetBtn.disabled = true;
-        setStatus(uploadMessage, 'info');
+        const loadingOptions = showProcessingIndicator ? { loading: true } : undefined;
+        setStatus(uploadMessage, 'info', loadingOptions);
 
         try {
             const response = await fetch(config.endpoint, { method: 'POST', body: formData });

@@ -14,7 +14,10 @@
 <body class="dark">
 
     <header>
-        <h1 id="site-title" role="button" tabindex="0" onclick="switchTab('home')" onkeydown="if(event.key==='Enter'||event.key===' ') switchTab('home')">Krishna's Computer Vision Coursework Site</h1>
+        <h1 id="site-title" role="button" tabindex="0" onclick="switchTab('home')" onkeydown="if(event.key==='Enter'||event.key===' ') switchTab('home')">
+            <img src="{{ url_for('static', filename='favicon.ico') }}" alt="" class="site-title__icon" aria-hidden="true">
+            <span>Krishna's Computer Vision Coursework Site</span>
+        </h1>
         <div class="header-controls">
             <button id="global-reset-btn" class="subtle-btn" title="Reset all modules and clear results">Reset All</button>
             <button id="theme-toggle" class="theme-toggle" aria-label="Toggle color theme" title="Toggle color theme"
@@ -1078,7 +1081,7 @@
                         <h3 id="module7-part1-title">Part 1 - Calibrated Stereo Depth &amp; Measurements</h3>
                         <p>Follow the exact CLI workflow inside the browser: calibrate with a reference image, triangulate depth from a stereo pair, then measure arbitrary segments.</p>
                     </div>
-                    <button type="button" class="subtle-btn" id="module7-example-btn">Use example dataset</button>
+                    <button type="button" class="subtle-btn" id="module7-example-btn">Use example images</button>
                 </header>
                 <div class="module7-card__body module7-part1-body">
                     <div class="module7-alert" role="status">

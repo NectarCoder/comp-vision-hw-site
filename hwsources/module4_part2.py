@@ -216,10 +216,12 @@ def start_custom_ransac(points_source, points_destination, threshold=5.0, max_it
 
 # Image resizing/downscaling method
 def resize_image(image, width=None):
-    (height, width) = image.shape[:2]
-    if width is None: return image
-    ratio = width / float(width) # Aspect ratio
-    dimension = (width, int(height * ratio))
+    if image is None: return None
+    height, image_width = image.shape[:2]
+    if width is None or width <= 0 or image_width == 0:
+        return image
+    scale = width / float(image_width)
+    dimension = (int(round(width)), max(1, int(round(height * scale))))
     return cv2.resize(image, dimension, interpolation=cv2.INTER_AREA)
 
 # Sorts the number strings (e.g. 1, 2, 10 instead of 1, 10, 2)
@@ -334,6 +336,24 @@ def start_custom_stitching(images):
         panorama[mask > 0] = warped[mask > 0] # Putting the valid pixels into the canvas for creating the panorama
         
     return crop_black_borders(panorama) # Removing dark black borders and returning the final panorama image
+
+
+def run_stitching_custom(images, width=None, require_min_images=True):
+    """Entry point used by the Flask app to run the custom stitching pipeline."""
+    if images is None:
+        raise ValueError("Images list cannot be None")
+
+    processed = []
+    for image in images:
+        if image is None or getattr(image, 'size', 0) == 0:
+            continue
+        resized = resize_image(image, width=width) if width is not None else image
+        processed.append(resized)
+
+    if require_min_images and len(processed) < 4:
+        raise ValueError("At least 4 valid images are required for stitching.")
+
+    return start_custom_stitching(processed)
 
 # Using affine transformation rather than Homography to avoid bowtie distortion effect
 def start_opencv_stitching(images):

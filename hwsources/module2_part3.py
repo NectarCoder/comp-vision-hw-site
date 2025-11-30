@@ -46,18 +46,12 @@ def match_template_once(scene_gray: np.ndarray, tpl_gray: np.ndarray, threshold:
         return [], []
     # Template matching (cross correlation)
     res = cv2.matchTemplate(scene_gray, tpl_gray, cv2.TM_CCORR_NORMED)
-    y_indices, x_indices = np.where(res >= threshold) # Find all coordinates where score exceeds threshold
-    boxes, scores = [], []
-    # Convert pixel coordinates into outlining box format
-    for (y, x) in zip(y_indices, x_indices):
-        boxes.append((int(x), int(y), int(x + template_width), int(y + template_height)))
-        scores.append(float(res[y, x]))
-    # Only the top-max_candidates are retained for reducing computational cost
     max_candidates = 200
-    if len(scores) > max_candidates:
-        order = np.argsort(scores)[::-1][:max_candidates]
-        boxes = [boxes[i] for i in order]
-        scores = [scores[i] for i in order]
+    y_idxs, x_idxs, selected_scores = m2_1.select_top_scores(res, threshold, max_candidates)
+    boxes, scores = [], []
+    for y, x, score in zip(y_idxs, x_idxs, selected_scores):
+        boxes.append((int(x), int(y), int(x + template_width), int(y + template_height)))
+        scores.append(float(score))
     return boxes, scores
 
 # Draws outlining boxes and labels for each detected object

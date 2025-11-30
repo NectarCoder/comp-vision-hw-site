@@ -124,8 +124,21 @@ header {
 h1 { margin: 0; font-size: 1.25rem; font-weight: 600; color: var(--primary); }
 
 /* Make the main title clearly interactive when clickable */
-#site-title { cursor: pointer; display: inline-block; }
-#site-title:focus { outline: 3px solid rgba(37,99,235,0.18); outline-offset: 6px; border-radius: 6px; }
+#site-title {
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+}
+#site-title:focus { outline: 3px solid rgba(37,99,235,0.18); outline-offset: 6px; border-radius: 10px; }
+
+.site-title__icon {
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    box-shadow: 0 6px 18px rgba(0,0,0,0.12);
+    flex-shrink: 0;
+}
 
 /* Navigation Tabs (now floating rounded buttons) */
 .tabs {
@@ -191,8 +204,8 @@ main {
        so expanding content inside main (like the source panels)
        won't cause the header / tabs to shrink vertically */
     overflow-y: auto;
-    padding: 2rem;
-    max-width: 900px;
+    padding: clamp(1.5rem, 2vw, 2.5rem);
+    max-width: min(96vw, 1100px);
     margin: 0 auto;
     width: 100%;
     box-sizing: border-box;
@@ -1295,12 +1308,59 @@ body.module3-lightbox-open {
 }
 
 #module7-example-btn {
-    background: transparent;
+    position: relative;
     color: var(--primary);
-    border: 1px dashed var(--primary);
+    border: 1px solid rgba(59,130,246,0.7);
+    background: rgba(59,130,246,0.08);
     padding: 0.45rem 1.2rem;
     border-radius: 999px;
     font-weight: 600;
+    box-shadow: 0 0 0 0 rgba(59,130,246,0.35), 0 0 22px rgba(59,130,246,0.35);
+    animation: module7ExampleGlow 1.8s ease-in-out infinite, module7ExampleBlink 2.6s steps(2, jump-none) infinite;
+}
+
+#module7-example-btn:hover:not(:disabled),
+#module7-example-btn:focus-visible {
+    border-color: rgba(59,130,246,0.9);
+    background: rgba(59,130,246,0.18);
+}
+
+#module7-example-btn:disabled {
+    animation: none;
+    box-shadow: none;
+    background: transparent;
+    border-color: var(--border);
+}
+
+@keyframes module7ExampleGlow {
+    0%,
+    100% {
+        box-shadow: 0 0 0 0 rgba(59,130,246,0.35), 0 0 18px rgba(59,130,246,0.4);
+        transform: translateY(0);
+    }
+    50% {
+        box-shadow: 0 0 0 8px rgba(59,130,246,0.12), 0 0 36px rgba(59,130,246,0.75);
+        transform: translateY(-1px);
+    }
+}
+
+@keyframes module7ExampleBlink {
+    0%,
+    30%,
+    100% {
+        opacity: 1;
+    }
+    60% {
+        opacity: 0.55;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    #module7-example-btn {
+        animation: none;
+        opacity: 1;
+        box-shadow: 0 0 0 2px rgba(59,130,246,0.25), 0 0 24px rgba(59,130,246,0.45);
+    }
 }
 
 .m7-step-card {
@@ -2091,6 +2151,32 @@ button:disabled { cursor: not-allowed; opacity: 0.55; }
     border-radius: 8px;
     background: rgba(148,163,184,0.12);
     color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 2.2rem;
+}
+
+.status-line .status-line__text {
+    flex: 1;
+}
+
+.status-line .status-spinner {
+    width: 1rem;
+    height: 1rem;
+    border-radius: 50%;
+    border: 2px solid rgba(148,163,184,0.4);
+    border-top-color: var(--primary);
+    animation: status-spin 0.9s linear infinite;
+    display: none;
+}
+
+.status-line[data-loading="true"] .status-spinner {
+    display: inline-block;
+}
+
+@keyframes status-spin {
+    to { transform: rotate(360deg); }
 }
 
 /* --- Module 4 sample buttons: glow + glisten --- */

@@ -65,6 +65,45 @@ def non_max_suppression(boxes: List[Tuple[int, int, int, int]], scores: List[flo
 
     return keep
 
+
+def select_top_scores(score_map: np.ndarray, threshold: float, max_candidates: int) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Return the row indices, column indices, and scores for the strongest template matches."""
+    if max_candidates <= 0:
+        return (
+            np.empty(0, dtype=np.int32),
+            np.empty(0, dtype=np.int32),
+            np.empty(0, dtype=np.float32),
+        )
+
+    hit_mask = score_map >= threshold
+    hit_count = int(hit_mask.sum())
+    if hit_count == 0:
+        return (
+            np.empty(0, dtype=np.int32),
+            np.empty(0, dtype=np.int32),
+            np.empty(0, dtype=np.float32),
+        )
+
+    if hit_count <= max_candidates:
+        y_idxs, x_idxs = np.where(hit_mask)
+        scores = score_map[y_idxs, x_idxs]
+        order = np.argsort(scores)[::-1]
+        return y_idxs[order], x_idxs[order], scores[order]
+
+    flat_scores = score_map.reshape(-1)
+    limit = min(max_candidates * 4, flat_scores.size)
+    idxs = np.argpartition(flat_scores, -limit)[-limit:]
+    idxs = idxs[np.argsort(flat_scores[idxs])[::-1]]
+    y_idxs, x_idxs = np.unravel_index(idxs, score_map.shape)
+    scores = flat_scores[idxs]
+
+    valid = scores >= threshold
+    y_idxs, x_idxs, scores = y_idxs[valid], x_idxs[valid], scores[valid]
+    if y_idxs.size > max_candidates:
+        y_idxs, x_idxs, scores = y_idxs[:max_candidates], x_idxs[:max_candidates], scores[:max_candidates]
+
+    return y_idxs.astype(np.int32), x_idxs.astype(np.int32), scores.astype(np.float32)
+
 # Template matching
 def match_template(scene_path: str, template_path: str, threshold: float = 0.8, save_result: bool = True, *, draw_all: bool = True) -> bool:
     if not os.path.isfile(scene_path): raise FileNotFoundError(f"Scene file not found :- {scene_path}")
@@ -85,27 +124,19 @@ def match_template(scene_path: str, template_path: str, threshold: float = 0.8, 
 
     # Using OpenCV cross-correlation template matching
     score_map = cv2.matchTemplate(scene_gray, template_gray, cv2.TM_CCORR_NORMED)
-    # All candidates' coordinates above threshold will be stored
-    y_idxs, x_idxs = np.where(score_map >= threshold)
-
-    # Building the candidate detection boxes
-    candidate_boxes: List[Tuple[int, int, int, int]] = []
-    candidate_scores: List[float] = []
-    for (y, x) in zip(y_idxs, x_idxs):
-        candidate_boxes.append((int(x), int(y), int(x + template_width), int(y + template_height)))
-        candidate_scores.append(float(score_map[y, x]))
-
-    # Only keeping the top-max_candidates by correlation score to reduce computational cost
     max_candidates = 50
-    if len(candidate_scores) > max_candidates:
-        top_order = np.argsort(candidate_scores)[::-1][:max_candidates]
-        candidate_boxes = [candidate_boxes[i] for i in top_order]
-        candidate_scores = [candidate_scores[i] for i in top_order]
+    y_idxs, x_idxs, selected_scores = select_top_scores(score_map, threshold, max_candidates)
 
     # Only continue if there are any candidates
-    if not candidate_boxes:
+    if y_idxs.size == 0:
         print(f"No matches found  with the threshold set to :- {threshold}")
         return False
+
+    candidate_boxes: List[Tuple[int, int, int, int]] = []
+    candidate_scores: List[float] = []
+    for y, x, score in zip(y_idxs, x_idxs, selected_scores):
+        candidate_boxes.append((int(x), int(y), int(x + template_width), int(y + template_height)))
+        candidate_scores.append(float(score))
 
     # Application of non-maximum suppression for removing overlapping detections
     keep_idxs = non_max_suppression(candidate_boxes, candidate_scores, iou_threshold=0.35)
@@ -169,7 +200,7 @@ def main() -> None:
             print("Path is missing or file does not exist - please give a correct file path")
 
     # Threshold value
-    threshold = 0.7
+    threshold = 0.6
 
     # Allow some optional scene and template arguments
     if len(sys.argv) >= 3:

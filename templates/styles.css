@@ -6,6 +6,7 @@
     --surface: #ffffff;
     --text: #1e293b;
     --muted: #64748b;
+    --muted-text: #475569;
     --border: #e2e8f0;
     --output-bg: #0f172a;
     --output-text: #10b981;
@@ -14,6 +15,7 @@
     --tab-bg: rgba(2,6,23,0.06); /* subtle gray-blue */
     --tab-hover-bg: rgba(37,99,235,0.06);
     --tab-active-bg: rgba(37,99,235,0.12);
+    --panel: #ffffff;
 }
 
 /* Dark theme overrides - applied when <body> has .dark */
@@ -24,6 +26,7 @@ body.dark {
     --surface: #0f1724;
     --text: #e6eef6;
     --muted: #9aa8b4;
+    --muted-text: #b6c6d4;
     --border: rgba(255,255,255,0.06);
     --output-bg: #0b1220;
     --output-text: #7ee787;
@@ -32,6 +35,7 @@ body.dark {
     --tab-bg: rgba(255,255,255,0.04);
     --tab-hover-bg: rgba(96,165,250,0.10);
     --tab-active-bg: rgba(96,165,250,0.16);
+    --panel: #151823;
 }
 
 /* Smooth transitions for theme changes (colors & surfaces) */
